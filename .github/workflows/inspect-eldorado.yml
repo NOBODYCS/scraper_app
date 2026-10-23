@@ -2,6 +2,9 @@ name: Inspect eldorado search HTML
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["inspect-trigger"]
 
 jobs:
   inspect:
