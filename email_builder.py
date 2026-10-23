@@ -65,6 +65,15 @@ def _salary_html(salary: str) -> str:
     return f'<span style="font-weight:700;color:{INK};font-size:13px">💰 {esc}</span>'
 
 
+def _title_html(url: str, title: str) -> str:
+    if url:
+        return (
+            f'<div style="margin-top:2px"><a href="{url}" '
+            f'style="color:{INK};font-weight:700;font-size:15px;text-decoration:none">{title}</a></div>'
+        )
+    return f'<div style="margin-top:2px;color:{INK};font-weight:700;font-size:15px">{title}</div>'
+
+
 def _offer_card(m: dict, idx: int) -> str:
     o = m["offer"]
     title = html_mod.escape(_g(o, "title"))
@@ -95,7 +104,7 @@ def _offer_card(m: dict, idx: int) -> str:
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
       <td style="vertical-align:top">
         <div style="font-size:11px;color:{FAINT};font-weight:700;letter-spacing:1px">#{idx:02d} · {source.upper()}</div>
-        <div style="margin-top:2px"><a href="{url}" style="color:{INK};font-weight:700;font-size:15px;text-decoration:none">{title}</a></div>
+        {_title_html(url, title)}
         <div style="color:{MUTED};font-size:12.5px;margin-top:2px">{company}</div>
       </td>
       <td align="right" style="vertical-align:top;padding-left:8px">{_badge(m['match'])}</td>

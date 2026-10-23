@@ -294,9 +294,15 @@ def scrape_rocketjobs() -> list[Offer]:
 def _parse_search_cards(html: str) -> list[Offer]:
     offers = []
     h3_re = re.compile(r'<h3[^>]*>(?P<inner>.*?)</h3>', re.S)
-    for m in h3_re.finditer(html):
+    h3s = list(h3_re.finditer(html))
+    for i, m in enumerate(h3s):
         inner = m.group("inner")
-        link_m = re.search(r'<a[^>]*href="(?P<url>[^"]+)"', inner)
+        # the offer anchor may wrap the h3, sit inside it, or follow it —
+        # search the whole card region (inside, before, and the card body)
+        region = inner
+        if i + 1 < len(h3s):
+            region += html[m.end():h3s[i + 1].start()][:800]
+        link_m = re.search(r'<a[^>]*href="(?P<url>/[^"]+|https?://[^"]+)"', region)
         title = _strip_tags(inner)
         if not title or len(title) < 4:
             continue
@@ -309,9 +315,12 @@ def _parse_search_cards(html: str) -> list[Offer]:
             r'(Warszawa|Zdalnie|Zdalna|Remote|Kraków|Wrocław|Gdańsk|Poznań|'
             r'Łódź|Katowice|Szczecin|Lublin|Bydgoszcz|Hybrydowo|Hybryda|Hybryd)', after
         )
+        raw_url = link_m.group("url") if link_m else ""
+        if raw_url and raw_url.startswith("/"):
+            raw_url = f"https://czyjesteldorado.pl{raw_url}"
         offers.append(Offer(
             title=title[:120],
-            url=link_m.group("url") if link_m else "",
+            url=raw_url,
             salary=_strip_tags(salary_m.group("sal")) + " zł" if salary_m else "",
             location=loc_m.group(1) if loc_m else "",
             skills=[_strip_tags(s) for s in skills],
