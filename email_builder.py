@@ -39,11 +39,11 @@ def build_email(matches: list[dict], board_status: dict[str, str], date_str: str
     )
 
     n = len(matches)
-    subject = f"[Job Alerts] {date_str}: {n} dopasowanych ofert IT (≥70%)"
+    subject = f"[Job Alerts] {date_str}: {n} dopasowanych ofert IT (≥50%)"
 
     html_body = f"""<div style="font-family:Arial,Helvetica,sans-serif;max-width:760px">
 <h2 style="color:#1a1a2e">Daily Job Alerts — {date_str}</h2>
-<p>{n} ofert dopasowanych do Twojego profilu (match ≥ 70%, lokalizacja: Warszawa lub zdalnie).</p>
+<p>{n} ofert dopasowanych do Twojego profilu (match ≥ 50%, lokalizacja: Warszawa lub zdalnie).</p>
 <table border="1" cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:13px">
 <thead><tr style="background:#f0f0f5">
 <th style="padding:6px 8px">#</th><th style="padding:6px 8px;text-align:left">Oferta</th>
@@ -59,5 +59,5 @@ def build_email(matches: list[dict], board_status: dict[str, str], date_str: str
     for i, m in enumerate(top, 1):
         o = m["offer"]
         plain.append(f"{i}. [{m['match']}%] {o.title} — {o.company} ({o.location})\n   {o.url}")
-    plain_text = f"Daily Job Alerts — {date_str}\n{n} matched offers (>=70%).\n\n" + "\n".join(plain)
+    plain_text = f"Daily Job Alerts — {date_str}\n{n} matched offers (>=50%).\n\n" + "\n".join(plain)
     return subject, html_body

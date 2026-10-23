@@ -82,7 +82,7 @@ def match_offers(offers: list) -> list[dict]:
         if not location_ok(o):
             continue
         s = score_offer(o)
-        if s < 70:
+        if s < 50:
             continue
         results.append({"offer": o, "match": s})
     results.sort(key=lambda r: r["match"], reverse=True)

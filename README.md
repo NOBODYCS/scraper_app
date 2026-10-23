@@ -13,7 +13,7 @@ self-hosted Mistral workflow worker (Docker / Portainer).
 2. Scores each offer 0-100% against Wojciech's competency profile
    (IT Systems Engineer: Windows/Linux, AD/M365/Entra/Intune, virtualization,
    networking, monitoring, automation) — `matcher.py`
-   - Only matches ≥ 70% are included.
+   - Only matches ≥ 50% are included.
    - Hard location filter: offers must be EITHER Warsaw (local/hybrid) OR
      fully remote — everything else is discarded.
 3. Sends a daily digest email via the Gmail connector with the TOP 20 matches.
