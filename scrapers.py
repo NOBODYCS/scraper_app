@@ -12,6 +12,8 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
+import os
 
 import urllib.request
 import urllib.error
@@ -213,42 +215,27 @@ def scrape_rocketjobs() -> list[Offer]:
 # --------------------------------------------------------------------------
 
 def scrape_eldorado() -> list[Offer]:
+    """Scrape czyjesteldorado.pl /search pages.
+
+    The site blocks datacenter IPs; from a residential IP (the self-hosted
+    worker) the pages render server-side with offer cards as <article> or
+    list markup. Parses title/company/salary/location/skills from card text;
+    URL is linked from the card when present.
+    """
     offers = []
-    try:
-        html = _get("https://czyjesteldorado.pl/", timeout=40).decode("utf-8", "replace")
-        ld_blocks = re.findall(
-            r'<script type="application/ld\+json">(.*?)</script>', html, re.S
-        )
-        for block in ld_blocks:
-            try:
-                j = json.loads(block)
-            except json.JSONDecodeError:
-                continue
-            items = j.get("itemListElement", []) if isinstance(j, dict) else []
-            for it in items:
-                if not isinstance(it, dict):
-                    continue
-                o = it.get("item") or it
-                if "title" not in o:
-                    continue
-                offers.append(Offer(
-                    title=_strip_tags(o.get("title", "")),
-                    company=_strip_tags(o.get("hiringOrganization", {}).get("name", ""))
-                        if isinstance(o.get("hiringOrganization"), dict) else "",
-                    location=_strip_tags(o.get("jobLocation", {}).get("address", {}).get("addressLocality", ""))
-                        if isinstance(o.get("jobLocation"), dict) else "",
-                    url=o.get("url", ""),
-                    source="czyjesteldorado.pl",
-                ))
-        if not offers:
-            for t, c in re.findall(
-                r'<h3[^>]*>([^<]{4,120})</h3>.{0,600}?<p[^>]*>([^<]{2,60})</p>', html, re.S
-            )[:50]:
-                offers.append(Offer(title=_strip_tags(t), company=_strip_tags(c), source="czyjesteldorado.pl"))
-    except Exception as e:
-        log.warning("czyjesteldorado.pl scrape failed (possibly IP-blocked): %s", e)
-    log.info("czyjesteldorado.pl: %d offers", len(offers))
-    return offers
+    queries = ["administrator", "it+support", "helpdesk"]
+    for q in queries:
+        try:
+            html = _get(f"https://czyjesteldorado.pl/search?q={q}", timeout=45).decode("utf-8", "replace")
+            if os.getenv("ELDORADO_DEBUG"):
+                Path("/tmp/eldorado_search.html").write_text(html, encoding="utf-8")
+                log.info("ELDORADO_DEBUG: saved /tmp/eldorado_search.html (%d bytes)", len(html))
+            offers.extend(_parse_search_cards(html))
+        except Exception as e:
+            log.warning("czyjesteldorado.pl scrape failed for q=%s: %s", q, e)
+    uniq = {o.dedup_key: o for o in offers}
+    log.info("czyjesteldorado.pl: %d offers", len(uniq))
+    return list(uniq.values())
 
 
 SCRAPERS = {
@@ -272,3 +259,37 @@ def scrape_all() -> tuple[list[Offer], dict[str, str]]:
         except Exception as e:
             status[name] = f"error: {e}"
     return list(all_offers.values()), status
+
+
+def _parse_search_cards(html: str) -> list[Offer]:
+    """Parse offer cards from a czyjesteldorado.pl /search page.
+
+    Cards render as headings followed by company/location/seniority text and
+    skill chips; best-effort structured extraction used until the exact
+    markup is confirmed from a reachable IP (set ELDORADO_DEBUG=1 on the
+    worker to dump the raw page for parser tuning).
+    """
+    offers = []
+    h3_re = re.compile(r'<h3[^>]*>(?P<inner>.*?)</h3>', re.S)
+    for m in h3_re.finditer(html):
+        inner = m.group("inner")
+        link_m = re.search(r'<a[^>]*href="(?P<url>[^"]+)"', inner)
+        title = _strip_tags(inner)
+        if not title or len(title) < 4:
+            continue
+        after = html[m.end():m.end() + 1200]
+        salary_m = re.search(
+            r'(?P<sal>\d[\d\u00a0.,]*\s*[\u2013-]\s*\d[\d\u00a0.,]*)\s*z\u0142', after
+        )
+        skills = re.findall(r'>([A-Za-z0-9.#/+\-]{2,30})</', after)[:8]
+        # company/location/seniority render adjacent to the title in card text
+        loc_m = re.search(r'(Warszawa|Zdalnie|Krak\u00f3w|Wroc\u0142aw|Gda\u0144sk|Pozna\u0144|\u0141\u00f3d\u017a|Katowice|Szczecin|Lublin|Bia\u0142ystok|Bydgoszcz|Hybrydowo)', after)
+        offers.append(Offer(
+            title=title[:120],
+            url=link_m.group("url") if link_m else "",
+            salary=_strip_tags(salary_m.group("sal")) + " z\u0142" if salary_m else "",
+            location=loc_m.group(1) if loc_m else "",
+            skills=[_strip_tags(s) for s in skills],
+            source="czyjesteldorado.pl",
+        ))
+    return offers
