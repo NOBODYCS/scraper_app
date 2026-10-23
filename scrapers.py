@@ -287,6 +287,95 @@ def scrape_rocketjobs() -> list[Offer]:
 
 
 # --------------------------------------------------------------------------
+# czyjesteldorado.pl — OFFICIAL MCP server (https://czyjesteldorado.pl/_mcp).
+# Structured JSON via search_jobs: no HTML parsing, no rate-limit roulette.
+# Falls back to the legacy HTML scraper below if the MCP server is unavailable.
+
+ELDORADO_MCP = "https://czyjesteldorado.pl/_mcp"
+
+_ELDO_QUERIES = [
+    "administrator",
+    "administrator systemów",
+    "it support",
+    "inżynier systemów",
+    "windows administrator",
+    "helpdesk",
+]
+
+_ELDO_MODE_LABEL = {"remote": "Zdalnie", "hybrid": "Hybrydowo", "office": "Stacjonarnie"}
+
+
+def _eldorado_mcp_call(phrase: str, work_modes: list) -> list:
+    import json as _json
+    import urllib.request as _rq
+
+    def post(body, sid=None):
+        h = {"Content-Type": "application/json", "Accept": "application/json",
+             "User-Agent": UA}
+        if sid:
+            h["Mcp-Session-Id"] = sid
+        req = _rq.Request(ELDORADO_MCP, data=_json.dumps(body).encode(), headers=h)
+        with _rq.urlopen(req, timeout=60) as r:
+            return r.headers.get("Mcp-Session-Id"), r.read().decode("utf-8", "replace")
+
+    init = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"protocolVersion": "2025-03-26", "capabilities": {},
+                       "clientInfo": {"name": "scraper_app", "version": "1.0"}}}
+    sid, _ = post(init)
+    post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid)
+    call = {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": {"name": "search_jobs",
+                       "arguments": {"phrase": phrase, "sortOrder": "newest",
+                                     "workModes": work_modes}}}
+    _, raw = post(call, sid)
+    resp = _json.loads(raw)
+    text = resp["result"]["content"][0]["text"]
+    return _json.loads(text).get("jobs", [])
+
+
+def scrape_eldorado() -> list:
+    import time
+
+    offers: dict[str, Offer] = {}
+    work_modes = ["remote", "hybrid", "office"]
+    for q in _ELDO_QUERIES:
+        try:
+            jobs = _eldorado_mcp_call(q, work_modes)
+            for j in jobs:
+                modes = ", ".join(_ELDO_MODE_LABEL.get(m, m) for m in j.get("work_modes", []))
+                sal = ""
+                if j.get("salary_from") and j.get("salary_to"):
+                    sal = f"{j['salary_from']} – {j['salary_to']} zł"
+                elif j.get("salary_from"):
+                    sal = f"od {j['salary_from']} zł"
+                o = Offer(
+                    title=j.get("title", ""),
+                    company=j.get("company", ""),
+                    location="; ".join(j.get("cities", [])),
+                    work_mode=modes,
+                    salary=sal,
+                    url=j.get("url", ""),
+                    skills=list(j.get("keywords", []))[:10],
+                    description="",
+                    source="czyjesteldorado.pl",
+                )
+                if o.title:
+                    offers.setdefault(o.dedup_key, o)
+            log.info("czyjesteldorado.pl MCP: q=%r -> %d offers (total %d)",
+                     q, len(jobs), len(offers))
+            time.sleep(1.0)
+        except Exception as e:
+            log.warning("czyjesteldorado.pl MCP failed for q=%r: %s; falling back to HTML", q, e)
+            try:
+                for o in _scrape_eldorado_html():
+                    offers.setdefault(o.dedup_key, o)
+            except Exception as e2:
+                log.warning("czyjesteldorado.pl HTML fallback also failed: %s", e2)
+            break
+    log.info("czyjesteldorado.pl: %d offers", len(offers))
+    return list(offers.values())
+
+
 # czyjesteldorado.pl — /search endpoint; datacenter-blocked, works from
 # residential IPs (the self-hosted worker). ELDORADO_DEBUG=1 dumps raw HTML.
 # --------------------------------------------------------------------------
@@ -349,7 +438,7 @@ def _eldorado_get(url: str, timeout: int = 45) -> str:
     raise RuntimeError(f"eldorado GET failed after retries: {url}")
 
 
-def scrape_eldorado() -> list[Offer]:
+def _scrape_eldorado_html() -> list[Offer]:
     import time
 
     offers: dict[str, Offer] = {}
