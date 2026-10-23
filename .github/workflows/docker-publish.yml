@@ -1,0 +1,52 @@
+name: Build and publish image to GHCR
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Syntax check (py_compile)
+        run: python3 -m py_compile worker.py job_alerts_workflow.py scrapers.py matcher.py email_builder.py
+
+      - name: Pipeline smoke test (scrape + match, no email)
+        run: |
+          python3 - <<'PY'
+          import logging
+          logging.basicConfig(level=logging.WARNING)
+          from scrapers import scrape_all
+          from matcher import match_offers
+          offers, status = scrape_all()
+          matches = match_offers(offers)
+          print("boards:", status)
+          print("offers:", len(offers), "matches:", len(matches))
+          assert any("ok" in v for v in status.values()), "all scrapers failed"
+          PY
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Short SHA for image tag
+        id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/nobodycs/scraper_app:latest
+            ghcr.io/nobodycs/scraper_app:sha-${{ steps.sha.outputs.short }}

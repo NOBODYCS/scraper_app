@@ -1,10 +1,18 @@
+# scraper_app — daily Polish job-board scraper + profile matcher + Gmail digest.
+# Deploy as a Portainer stack. Set MISTRAL_API_KEY in Portainer's environment
+# variables (or replace below). The image is built automatically by GitHub
+# Actions and published to GHCR on every push to main.
+
 services:
   scraper-app:
-    build: .
+    image: ghcr.io/nobodycs/scraper_app:latest
     container_name: scraper_app
     restart: unless-stopped
     environment:
-      MISTRAL_API_KEY: ${MISTRAL_API_KEY}
+      # Personal Mistral API key — connector credentials (Gmail) resolve
+      # from this identity. Store it in Portainer env vars, not in the file.
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:?set MISTRAL_API_KEY in stack env}
+      # Digest recipient (defaults to wcieslak99@proton.me if unset)
       JOB_ALERTS_RECIPIENT: ${JOB_ALERTS_RECIPIENT:-wcieslak99@proton.me}
     logging:
       driver: json-file
