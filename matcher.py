@@ -194,10 +194,15 @@ COMPETENCY LEVELS (calibrated, from his competency baseline):
 - FOUNDATIONAL-TO-INTERMEDIATE (do not overvalue): Networking (Fortinet,
   VLANs, L2/L3 — ops-experienced, NOT senior design); Virtualization (VMware,
   Proxmox, Hyper-V).
-- FOUNDATIONAL / NOT CLAIMABLE (penalize as hard requirements): Containers
-  beyond Docker/Portainer (NO Kubernetes, NO CI/CD); SQL query-level work
-  (server-level MSSQL maintenance only); Cloud IaaS beyond M365 (Azure VMs,
-  VNets, AWS); certifications (he has none).
+- FOUNDATIONAL / DEVELOPMENT AREAS (do not treat as hard requirements, but
+  do not score as experience either): Kubernetes, Ansible, Terraform and
+  CI/CD are ACTIVE LEARNING GOALS (confirmed 2026-10-23, priority order:
+  deepen Docker first, then k8s, Ansible, Terraform, CI/CD) — offers
+  requiring them are stretch opportunities for a keen, fast learner who
+  closes gaps through deliberate homelab practice; judge them as stretch,
+  not mismatch. SQL query-level work is a development area (server-level
+  MSSQL administration is real). Cloud IaaS beyond M365: none yet.
+  Certifications: none yet.
 - DEFENSIBILITY LIMITS (do not score these as his experience): no vSphere/VMware
   administration (only migration-scoped vCenter work); no RHEL in production;
   no Conditional Access policy ownership (HQ owns it, he does per-user MFA);
