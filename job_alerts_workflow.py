@@ -40,6 +40,21 @@ async def collect_and_match(llm_match: bool) -> dict:
     offers, status = scrape_all()
     matches = match_offers(offers)
     log.info("total offers: %d, stage-1 matches: %d", len(offers), len(matches))
+    # funnel diagnostics: where do offers die, per source board?
+    from matcher import ROLE_GATE, location_ok
+    per_src = {}
+    for o in offers:
+        d = per_src.setdefault(o.source, {"total": 0, "role_gate": 0, "loc_ok": 0, "scored": 0})
+        d["total"] += 1
+        if not ROLE_GATE.search(o.title or ""):
+            continue
+        d["role_gate"] += 1
+        if not location_ok(o):
+            continue
+        d["loc_ok"] += 1
+    for m in matches:
+        per_src.setdefault(m["offer"].source, {"total": 0, "role_gate": 0, "loc_ok": 0, "scored": 0})["scored"] += 1
+    log.info("funnel per board: %s", per_src)
     if llm_match:
         matches = await llm_rescore(matches)
         log.info("stage-2 (LLM) matches: %d", len(matches))

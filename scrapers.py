@@ -19,6 +19,7 @@ import unicodedata
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
+import html as html_mod
 import urllib.parse
 import urllib.request
 import urllib.error
@@ -180,7 +181,10 @@ def scrape_pracuj() -> list[Offer]:
 # justjoin.it / rocketjobs.pl — server-rendered cards; deep city/remote pages
 # --------------------------------------------------------------------------
 
-def _parse_jjit_cards(html: str, source: str) -> list[Offer]:
+_JUNK_SKILL = re.compile(r"\b(left|right|super offer|wygas|nowa|new\b|top\b|urgent)\b|\dd\b", re.I)
+
+
+def _parse_jjit_cards(html: str, source: str, ctx_location: str = "") -> list[Offer]:
     offers = []
     anchor_re = re.compile(
         r'<a href="(?P<url>https?://[^"]+)"[^>]*class="offer_list_offer_title_link"'
@@ -188,7 +192,7 @@ def _parse_jjit_cards(html: str, source: str) -> list[Offer]:
     )
     anchors = list(anchor_re.finditer(html))
     for idx, m in enumerate(anchors):
-        title = _strip_tags(m.group("title"))
+        title = html_mod.unescape(_strip_tags(m.group("title")))
         if not title:
             continue
         start = anchors[idx - 1].end() if idx > 0 else max(0, m.start() - 4000)
@@ -198,27 +202,37 @@ def _parse_jjit_cards(html: str, source: str) -> list[Offer]:
 
         comp = ""
         for pm in re.finditer(r'<p class="[^"]*">([^<]{2,80})</p>', before[-2500:]):
-            val = _strip_tags(pm.group(1))
+            val = html_mod.unescape(_strip_tags(pm.group(1)))
             if val.lower() in ("hybrid", "remote", "zdalnie", "hybrydowo", "stacjonarnie", "on-site"):
                 continue
             comp = val
-        locm = re.search(r'lucide-map-pin[^>]*></svg></div><p class="[^"]*">([^<]{1,60})</p>', before[-2500:])
+        # map-pin icon is followed by nested svg tags before the <p>: match
+        # across them with a lazy dot-all instead of [^>]*
+        locm = re.search(
+            r'lucide-map-pin.*?</svg></div><p class="[^"]*">([^<]{1,60})</p>',
+            before[-2500:], re.S,
+        )
         mode_m = re.search(r'<p class="[^"]*">(Hybrid|Remote|Zdalnie|Hybrydowo|Stacjonarnie|On-site)</p>', before[-2500:])
         sal_m = re.search(
             r'<span[^>]*>([\d.,\u00a0\s]+?(?:-\s*[\d.,\u00a0\s]+?)?)</span><!--[^>]*-->'
             r'\s*<span[^>]*>([A-Z]{2,4}/[a-z]+|[A-Z]{3})</span>',
             after[:2000],
         )
-        skills = [
-            _strip_tags(s)
-            for s in re.findall(
-                r'<div class="MuiBox-root[^"]*">([A-Za-z0-9.#/+\- ]{2,30})</div>', after[:4000]
-            )[:8]
-        ]
+        skills = []
+        for s in re.findall(r'<div class="MuiBox-root[^"]*">([A-Za-z0-9.#+/\- &;]{2,30})</div>', after[:4000]):
+            s = html_mod.unescape(_strip_tags(s))
+            if _JUNK_SKILL.search(s) or not s:
+                continue
+            skills.append(s)
+            if len(skills) >= 8:
+                break
+        location = html_mod.unescape(_strip_tags(locm.group(1))) if locm else ""
+        if not location and ctx_location:
+            location = ctx_location
         offers.append(Offer(
             title=title,
-            company=comp,
-            location=_strip_tags(locm.group(1)) if locm else "",
+            company=html_mod.unescape(comp) if comp else "",
+            location=location,
             salary=(sal_m.group(1).strip() + " " + sal_m.group(2)) if sal_m else "",
             work_mode=mode_m.group(1) if mode_m else "",
             url=m.group("url"),
@@ -228,14 +242,16 @@ def _parse_jjit_cards(html: str, source: str) -> list[Offer]:
     return offers
 
 
-def _scrape_jjit_family(base: str, slugs: list[str], source: str) -> list[Offer]:
+def _scrape_jjit_family(base: str, slugs: list[tuple[str, str]], source: str) -> list[Offer]:
+    """slugs: (url-slug, context-location) — the listing page itself tells us
+    the location when the card markup doesn't (e.g. /warszawa, /remote)."""
     import time
 
     offers: dict[str, Offer] = {}
-    for slug in slugs:
+    for slug, ctx_loc in slugs:
         try:
             html = _get(f"{base}/{slug}", timeout=40).decode("utf-8", "replace")
-            for o in _parse_jjit_cards(html, source):
+            for o in _parse_jjit_cards(html, source, ctx_loc):
                 offers.setdefault(o.dedup_key, o)
             time.sleep(FETCH_DELAY)
         except Exception as e:
@@ -247,7 +263,13 @@ def _scrape_jjit_family(base: str, slugs: list[str], source: str) -> list[Offer]
 def scrape_justjoin() -> list[Offer]:
     return _scrape_jjit_family(
         "https://justjoin.it/job-offers",
-        ["warszawa", "remote", "all-locations/devops", "all-locations/admin", "all-locations/support"],
+        [
+            ("warszawa", "Warszawa"),
+            ("remote", "Zdalnie"),
+            ("all-locations/devops", ""),
+            ("all-locations/admin", ""),
+            ("all-locations/support", ""),
+        ],
         "justjoin.it",
     )
 
@@ -255,7 +277,11 @@ def scrape_justjoin() -> list[Offer]:
 def scrape_rocketjobs() -> list[Offer]:
     return _scrape_jjit_family(
         "https://rocketjobs.pl/oferty-pracy",
-        ["warszawa", "wszystkie-lokalizacje/it", "wszystkie-lokalizacje"],
+        [
+            ("warszawa", "Warszawa"),
+            ("wszystkie-lokalizacje/it", ""),
+            ("wszystkie-lokalizacje", ""),
+        ],
         "rocketjobs.pl",
     )
 

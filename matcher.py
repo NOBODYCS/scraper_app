@@ -91,7 +91,14 @@ def score_offer(offer) -> int:
 
 
 def match_offers(offers: list) -> list[dict]:
-    """Stage 1: gate + score. Returns [{'offer': Offer, 'match': int}]."""
+    """Stage 1: gate + score. Returns [{'offer': Offer, 'match': int}].
+
+    Broad-recall filter: boards differ in how much text an offer carries
+    (pracuj gives full descriptions, justjoin only title+skills). The score
+    threshold scales with available signal: 50 with a description, 35
+    without. Stage 2 (LLM) then re-scores with real judgment and drops
+    the ones that don't hold up.
+    """
     results = []
     for o in offers:
         if not ROLE_GATE.search(o.title or ""):
@@ -99,7 +106,12 @@ def match_offers(offers: list) -> list[dict]:
         if not location_ok(o):
             continue
         s = score_offer(o)
-        if s < 50:
+        has_desc = bool((o.description or "").strip())
+        # description-less boards (justjoin/rocketjobs cards) score lower on
+        # the same fit because there is less text to match keywords in —
+        # relax the cutoff there and let stage 2 (LLM) do the precision work.
+        threshold = 50 if has_desc else 40
+        if s < threshold:
             continue
         results.append({"offer": o, "match": s})
     results.sort(key=lambda r: r["match"], reverse=True)
