@@ -30,12 +30,14 @@ def _offer_row(m: dict, idx: int) -> str:
         loc_txt = "Zdalnie/Remote"
     elif re.search(r"warszawa|warsaw", loc, re.I):
         loc_txt = f"Warszawa · {html_mod.escape(work_mode or '')}"
+    salary = html_mod.escape(_g(o, "salary") or "")
+    salary_html = f" · <b>{salary}</b>" if salary else ""
     reason_html = f'<div style="color:#0a7d33;font-size:11px">🤖 {reason}</div>' if reason else ""
     return f"""<tr>
 <td style="padding:6px 8px;font-weight:600">{idx}</td>
 <td style="padding:6px 8px">
   <div style="font-weight:700;font-size:14px"><a href="{url}">{title}</a></div>
-  <div style="color:#555;font-size:12px">{company} · {loc_txt} · <span style="color:#999">{source}</span></div>
+  <div style="color:#555;font-size:12px">{company} · {loc_txt}{salary_html} · <span style="color:#999">{source}</span></div>
   <div style="color:#777;font-size:12px">Skills: {skills_h}</div>
   {reason_html}
 </td>

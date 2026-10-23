@@ -15,23 +15,47 @@ import re
 
 log = logging.getLogger("job-alerts.matcher")
 
+# Weights calibrated against the competency baseline (2026-10-23):
+# strongest = M365/hybrid identity + monitoring/ITSM; intermediate = OS admin,
+# scripting, backup; foundational-to-intermediate = networking, virtualization
+# (do not overvalue); hard gaps = kubernetes/CI-CD, query SQL, cloud IaaS, certs.
 SKILL_WEIGHTS: list[tuple[str, int]] = [
-    (r"\b(system(?:s)? administrator|administrator system[oó]w|sysadmin|it administrator|administrator it)\b", 30),
-    (r"\b(windows server|windows|linux|ubuntu|debian)\b", 14),
-    (r"\b(active directory|\bad\b|entra\s?i?d?|azure ad|azure ad connect|intune|microsoft 365|m365|exchange online|office 365|defender|laps)\b", 14),
-    (r"\b(powershell|bash|python)\b", 10),
-    (r"\b(vmware|proxmox|hyper-?v|virtualization|wirtualizacja|vsphere)\b", 10),
-    (r"\b(zabbix|grafana|monitoring|easyvista|itsm|service desk)\b", 10),
-    (r"\b(veeam|backup|nas|synology|qnap|storage|san)\b", 8),
-    (r"\b(fortinet|fortigate|ubiquiti|mikrotik|cisco|ruckus|vlan|firewall|wifi|wlan|lan|switching|nac|802\.1x|sdwan|sd-wan|vpn)\b", 10),
-    (r"\b(gpo|group policy|wsus|wds|dns|dhcp|deployment|endpoint|helpdesk|help desk)\b", 8),
-    (r"\b(automation|automatyzacja|scripting|skrypty)\b", 6),
-    (r"\b(itil|itsm|sla|mttr|ticket|inciden[ct]|root[- ]cause)\b", 6),
-    (r"\b(cloud|chmura|hybrid|hibryd|on[- ]?prem|infrastructure|infrastruktura)\b", 6),
-    (r"\b(junior|mid|regular|specjalista)\b", 8),
-    (r"\b(senior|lead|architect|gł[oó]wny)\b", -10),
+    # Role identity — specific forms strongest...
+    (r"\b(system(?:s)? administrator|administrator system[oó]w|sysadmin|it administrator|administrator it|system engineer|inżynier system[oó]w)\b", 30),
+    # ...generic "Administrator <something>" weaker signal
+    (r"\b(administrator|administratorka)\b", 12),
+    # STRONGEST competencies (baseline: intermediate-strong / strong)
+    (r"\b(active directory|entra\s?i?d?|azure ad connect|intune|microsoft 365|m365|exchange online|office 365|sharepoint|teams|cross-forest|hybrid identity)\b", 16),
+    (r"\b(zabbix|grafana|easyvista|itsm)\b", 14),
+    (r"\b(monitoring|obserwowalność)\b", 8),
+    (r"\b(itil|sla|mttr|sop|root[- ]cause)\b", 8),
+    # INTERMEDIATE competencies
+    (r"\b(windows server|windows|linux|ubuntu|debian)\b", 12),
+    (r"\b(powershell|bash|python)\b", 9),
+    (r"\b(veeam|backup|nas|synology|qnap)\b", 8),
+    (r"\b(gpo|group policy|wsus|wds|dns|dhcp|endpoint management|defender|laps)\b", 8),
+    # FOUNDATIONAL-TO-INTERMEDIATE — explicitly reduced per baseline
+    (r"\b(vmware|proxmox|hyper-?v|virtualization|wirtualizacja|vsphere)\b", 6),
+    (r"\b(fortinet|fortigate|ubiquiti|mikrotik|ruckus|vlan|firewall|wlan|802\.1x|nac\b|sdwan|sd-wan)\b", 6),
+    (r"\b(cisco|ccna|ccnp)\b", 4),
+    # Contextual positives
+    (r"\b(automation|automatyzacja|scripting|skrypty)\b", 5),
+    (r"\b(hybrid|hibryd|on[- ]?prem|infrastructure|infrastruktura|patching|patch management)\b", 6),
+    (r"\b(mid|regular)\b", 8),
+    # Level direction
+    (r"\b(junior|młodszy|młodsza|mlodszy|stażysta|intern)\b", -15),
+    (r"\b(helpdesk|help desk|service desk|wsparcie techniczne|1st line|first line|linia wsparcia)\b", -20),
+    (r"\b(senior|lead|architect|gł[oó]wny|starsz)\b", -10),
+    # NOT a developer / wrong discipline
     (r"\b(developer|programista|software engineer|backend|frontend|fullstack|full[- ]stack)\b", -35),
     (r"\b(java(?!script)|sap abap|flutter|swift|kotlin)\b", -25),
+    # HARD GAPS from the baseline — heavy penalty when the offer demands them
+    (r"\b(kubernetes|k8s|helm|ci/cd|cicd|jenkins|gitlab ci|argo)\b", -18),
+    (r"\b(terraform|ansible|puppet)\b", -12),
+    (r"\b(azure\s?(vm|vnet|iaas)|aws|gcp|google cloud|cloud engineer|cloud architect)\b", -14),
+    (r"\b(oracle|dba|database administrator|postgresql|mysql|t[- ]sql|mssql)\b", -12),
+    (r"\b(rhel|red hat|rhcsa|rhce)\b", -10),
+    (r"\b(cissp|cism|ccsp|mcse|certif)\b", -6),
 ]
 
 ROLE_GATE = re.compile(
@@ -87,31 +111,60 @@ def match_offers(offers: list) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 PROFILE = """\
-Wojciech Cieślak — IT Systems Engineer, 3+ years experience.
+Wojciech Cieślak — IT Systems Engineer / Systems Administrator, 3+ years
+experience, Warsaw, Poland. English C1.
 Current: Systems Administrator for Central, South & Eastern Europe at Antalis —
-manages systems/infrastructure for 60+ sites in 7 countries (900+ users), primary
-escalation point for 9 local IT departments.
-Core stack: Windows Server & Linux (Ubuntu/Debian); Active Directory, Entra ID,
-Azure AD Connect, Intune, Exchange Online, Microsoft 365 governance; VMware,
-Proxmox, Hyper-V; Fortinet/Ubiquiti/MikroTik networking (VLANs, L2/L3, WLAN);
-Zabbix & Grafana monitoring; PowerShell/Bash/Python automation; Veeam backups,
-NAS; EasyVista ITSM; SOP development, root-cause analysis.
-Level: mid (3 years) — junior/mid roles fit best; senior roles are a stretch.
-Location requirement: Warsaw (onsite/hybrid) or fully remote ONLY.
-NOT a developer: no software engineering, backend/frontend, Java, SAP ABAP."""
+runs production infrastructure (servers, hybrid identity, endpoint management,
+patching, monitoring) for 1,000+ users across 11 countries, overseeing
+operations of 9 local IT departments. Primary escalation point.
+
+COMPETENCY LEVELS (calibrated, from his competency baseline):
+- STRONGEST: Microsoft 365 / hybrid identity (AD, Entra ID, Intune, Exchange
+  Online, SharePoint, Teams, Azure AD Connect, cross-forest migrations) —
+  intermediate-STRONG; Monitoring (Zabbix, Grafana, multi-source dashboards) —
+  intermediate-STRONG, his main differentiator; ITSM/process (EasyVista, MTTR,
+  SOPs) — strong for tenure.
+- INTERMEDIATE: Windows Server & Linux (Ubuntu/Debian) administration;
+  Scripting (PowerShell/Bash/Python, task-driven); Backup/storage (Veeam,
+  Synology/QNAP); Security hardening (MS Defender, LAPS); Docs-as-Code.
+- FOUNDATIONAL-TO-INTERMEDIATE (do not overvalue): Networking (Fortinet,
+  VLANs, L2/L3 — ops-experienced, NOT senior design); Virtualization (VMware,
+  Proxmox, Hyper-V).
+- FOUNDATIONAL / NOT CLAIMABLE (penalize as hard requirements): Containers
+  beyond Docker/Portainer (NO Kubernetes, NO CI/CD); SQL query-level work
+  (server-level MSSQL maintenance only); Cloud IaaS beyond M365 (Azure VMs,
+  VNets, AWS); certifications (he has none).
+- DEFENSIBILITY LIMITS (do not score these as his experience): no vSphere/VMware
+  administration (only migration-scoped vCenter work); no RHEL in production;
+  no Conditional Access policy ownership (HQ owns it, he does per-user MFA);
+  Apache = basic/vendor-spec only; Veeam experience is from a previous role
+  (Outpro), not current; homelab (Proxmox, Portainer, WireGuard, TrueNAS) is
+  practice, not professional experience.
+
+Level: mid (3 years). Junior, helpdesk, and service-desk roles are a STEP DOWN
+from his current position — he will not consider them. Senior roles are a stretch.
+Location: he lives in Warsaw — Warsaw onsite/hybrid and fully remote are ALL
+fine; NEVER claim relocation is required for Warsaw or remote offers.
+NOT a developer: no software engineering, backend/frontend, Java, SAP ABAP.
+Judge offers by the actual requirements in the description, not the title alone."""
 
 LLM_PROMPT = """You are a strict technical recruiter matching job offers to a candidate.
 
 CANDIDATE PROFILE:
 {profile}
 
-JOB OFFERS (JSON array, each has id, title, company, location, work_mode, skills):
+JOB OFFERS (JSON array; each has id, title, company, location, work_mode, salary, skills, description):
 {{offers}}
 
-For EACH offer, rate fit 0-100 considering: overlap with the core stack,
-seniority fit (mid level, ~3 yrs), and whether the role is genuinely a
-systems/infrastructure role (NOT development). Offers mentioning the candidate
-must relocate or that are pure developer roles get low scores.
+Scoring rules:
+- 80-100: strong overlap with the core stack AND mid-level systems/infrastructure role
+- 50-79: partial overlap or stretch in one dimension
+- 30-49: weak overlap OR wrong seniority direction
+- 0-29: helpdesk/service-desk/junior support roles (a step DOWN for him), pure
+  developer roles, or stacks with no overlap
+- NEVER penalize Warsaw or remote offers as "relocation" — he is based in Warsaw
+- Read the description requirements, not just the title: an "Administrator" of
+  COBOL/SAP/Veeva/Jira is an application admin, NOT a systems administrator
 
 Respond ONLY with a JSON object: {{"scores": [{{"id": <id>, "score": <0-100>, "reason": "<max 15 words>"}}]}}"""
 
@@ -142,7 +195,9 @@ async def llm_rescore(matches: list[dict], api_key: str | None = None) -> list[d
                 "company": (m["offer"].company or "")[:60],
                 "location": (m["offer"].location or "")[:60],
                 "work_mode": (m["offer"].work_mode or "")[:40],
+                "salary": (m["offer"].salary or "")[:40],
                 "skills": (m["offer"].skills or [])[:10],
+                "description": (m["offer"].description or "")[:800],
             }
             for i, m in enumerate(batch)
         ]
@@ -171,4 +226,6 @@ async def llm_rescore(matches: list[dict], api_key: str | None = None) -> list[d
             # blend: 50% regex + 50% LLM
             m["match"] = max(0, min(100, (m["match"] + m["llm_score"]) // 2))
     enriched.sort(key=lambda r: r["match"], reverse=True)
+    # Offers the LLM judged poor (blended < 50) are dropped from the digest
+    enriched = [m for m in enriched if m["match"] >= 50]
     return enriched
