@@ -1,20 +1,25 @@
-"""Job-board scrapers for Polish IT job market.
+"""Job-board scrapers for Polish IT job market — deep search edition.
 
-Each scraper returns a list of dicts:
-    title, company, location, work_mode, salary, url, skills, description, source
+Each scraper returns a list of Offer dicts. Scaping runs entirely on the
+self-hosted worker (residential IP) to avoid datacenter blocks.
 
-Designed to degrade gracefully: a failing board never kills the run.
+Cross-site dedup: one offer appears on many boards. `dedup_key` normalizes
+title+company (diacritics, gender suffixes like (k/m), punctuation) and
+`scrape_all` keeps the FIRST occurrence, preferring sources in SCRAPE_ORDER
+(offer URL is kept as extra evidence; URL-level dedup is also applied).
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import re
-from dataclasses import dataclass, field
-from pathlib import Path
 import os
+import re
+import unicodedata
+from dataclasses import dataclass, field, asdict
+from pathlib import Path
 
+import urllib.parse
 import urllib.request
 import urllib.error
 
@@ -31,6 +36,11 @@ BASE_HEADERS = {
     "Accept-Encoding": "identity",
 }
 
+# How deep to go: pages per listing URL (each page ~50 offers)
+PAGES_PER_URL = int(os.getenv("SCRAPER_PAGES_PER_URL", "3"))
+# Delay between page fetches (seconds) — politeness / block avoidance
+FETCH_DELAY = float(os.getenv("SCRAPER_FETCH_DELAY", "1.5"))
+
 
 @dataclass
 class Offer:
@@ -44,10 +54,30 @@ class Offer:
     description: str = ""
     source: str = ""
 
+    # --- dedup fuse -----------------------------------------------------
+    _SUFFIX_NOISE = re.compile(
+        r"[\(\[]\s*[a-z ,/]*\s*[\)\]]|m/k|k/m|f/m|x|k/m/n|m/f/k|f/m/x|w/m|k|\bwsz\b",
+        re.I,
+    )
+
+    @staticmethod
+    def _norm_text(s: str) -> str:
+        s = unicodedata.normalize("NFKD", s or "")
+        s = "".join(c for c in s if not unicodedata.combining(c))
+        s = s.lower()
+        s = Offer._SUFFIX_NOISE.sub(" ", s)
+        s = re.sub(r"[^a-z0-9]+", "", s)
+        return s[:70]
+
     @property
     def dedup_key(self) -> str:
-        norm = lambda s: re.sub(r"[^a-z0-9]+", "", (s or "").lower())[:60]
-        return f"{norm(self.title)}|{norm(self.company)}"
+        return f"{self._norm_text(self.title)}|{self._norm_text(self.company)}"
+
+    @property
+    def url_key(self) -> str:
+        u = (self.url or "").lower()
+        u = re.sub(r"[?#].*$", "", u)
+        return u
 
 
 def _get(url: str, timeout: int = 30, headers: dict | None = None) -> bytes:
@@ -63,24 +93,46 @@ def _strip_tags(s: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", s or "")).strip()
 
 
-# --------------------------------------------------------------------------
-# pracuj.pl  — __NEXT_DATA__ JSON embedded in server-rendered listing pages
-# --------------------------------------------------------------------------
+def _paged(urls: list[str]) -> list[str]:
+    """Expand listing URLs into paginated variants (pracuj uses ?pn=N)."""
+    out = []
+    for u in urls:
+        out.append(u)
+        for pn in range(2, PAGES_PER_URL + 1):
+            sep = "&" if "?" in u else "?"
+            out.append(f"{u}{sep}pn={pn}")
+    return out
 
-PRACUJ_CATEGORIES = [
-    "cc=0301",      # IT - ogólnie
-    "cc=0301001",   # administracja
-    "cc=0301012",   # sieci
-]
-PRACUJ_KEYWORD = "administrator+systemowy"  # also fetch a keyword search
 
+# --------------------------------------------------------------------------
+# pracuj.pl — __NEXT_DATA__ JSON; deep keyword + category searches
+# --------------------------------------------------------------------------
 
 def scrape_pracuj() -> list[Offer]:
-    offers = []
-    seen = set()
-    urls = ["https://www.pracuj.pl/praca?" + c for c in PRACUJ_CATEGORIES]
-    urls.append(f"https://www.pracuj.pl/praca/{PRACUJ_KEYWORD}%3Bkw")
-    for u in urls:
+    import time
+
+    offers: dict[str, Offer] = {}
+    # Targeted IT-infra keyword searches + broad IT category, Warszawa + remote
+    searches = [
+        "administrator systemowy",
+        "administrator it",
+        "administrator serwerów",
+        "it support",
+        "helpdesk",
+        "inżynier systemów",
+        "administrator sieci",
+        "system administrator",
+    ]
+    urls = [
+        "https://www.pracuj.pl/praca/" + urllib.parse.quote(s, safe="") + "%3Bkw"
+        for s in searches
+    ]
+    urls += [
+        "https://www.pracuj.pl/praca?cc=0301&wsn=Warszawa",
+        "https://www.pracuj.pl/praca?cc=0301001&wsn=Warszawa",
+        "https://www.pracuj.pl/praca?cc=0301&wpo=Zdalna",
+    ]
+    for u in _paged(urls):
         try:
             html = _get(u, timeout=40).decode("utf-8", "replace")
             m = re.search(
@@ -94,6 +146,7 @@ def scrape_pracuj() -> list[Offer]:
                 data.get("props", {}).get("pageProps", {})
                 .get("dehydratedState", {}).get("queries", [])
             )
+            got = 0
             for q in queries:
                 qd = q.get("state", {}).get("data") or {}
                 if not isinstance(qd, dict) or "groupedOffers" not in qd:
@@ -111,28 +164,23 @@ def scrape_pracuj() -> list[Offer]:
                     )
                     locs = [o.get("displayWorkplace", "") for o in g.get("offers", [])]
                     off.location = "; ".join(dict.fromkeys(l for l in locs if l))
-                    if off.title and off.url and off.dedup_key not in seen:
-                        seen.add(off.dedup_key)
-                        offers.append(off)
+                    if off.title and off.url and off.dedup_key not in offers:
+                        offers[off.dedup_key] = off
+                        got += 1
+            if got == 0 and "pn=" in u:
+                pass  # exhausted; remaining pages skipped silently
+            time.sleep(FETCH_DELAY)
         except Exception as e:
             log.warning("pracuj.pl scrape failed for %s: %s", u, e)
     log.info("pracuj.pl: %d offers", len(offers))
-    return offers
+    return list(offers.values())
 
 
 # --------------------------------------------------------------------------
-# justjoin.it / rocketjobs.pl  — server-rendered offer cards
-# Both sites run the same platform; cards share the
-# `offer_list_offer_title_link` anchor class and MUI markup.
+# justjoin.it / rocketjobs.pl — server-rendered cards; deep city/remote pages
 # --------------------------------------------------------------------------
 
 def _parse_jjit_cards(html: str, source: str) -> list[Offer]:
-    """Parse justjoin.it-family offer cards.
-
-    Layout (server-rendered MUI): each card has a title anchor with class
-    `offer_list_offer_title_link`; company name and location appear in <p>
-    tags BEFORE the title; salary spans and skill chips follow it.
-    """
     offers = []
     anchor_re = re.compile(
         r'<a href="(?P<url>https?://[^"]+)"[^>]*class="offer_list_offer_title_link"'
@@ -143,20 +191,17 @@ def _parse_jjit_cards(html: str, source: str) -> list[Offer]:
         title = _strip_tags(m.group("title"))
         if not title:
             continue
-        # card window: from end of previous anchor to start of next
         start = anchors[idx - 1].end() if idx > 0 else max(0, m.start() - 4000)
         end = anchors[idx + 1].start() if idx + 1 < len(anchors) else m.end() + 6000
         before = html[start:m.start()]
         after = html[m.end():end]
 
-        # company: last standalone <p> before the title that isn't a mode
         comp = ""
         for pm in re.finditer(r'<p class="[^"]*">([^<]{2,80})</p>', before[-2500:]):
             val = _strip_tags(pm.group(1))
             if val.lower() in ("hybrid", "remote", "zdalnie", "hybrydowo", "stacjonarnie", "on-site"):
                 continue
             comp = val
-        # location: <p> following the map-pin icon
         locm = re.search(r'lucide-map-pin[^>]*></svg></div><p class="[^"]*">([^<]{1,60})</p>', before[-2500:])
         mode_m = re.search(r'<p class="[^"]*">(Hybrid|Remote|Zdalnie|Hybrydowo|Stacjonarnie|On-site)</p>', before[-2500:])
         sal_m = re.search(
@@ -183,92 +228,44 @@ def _parse_jjit_cards(html: str, source: str) -> list[Offer]:
     return offers
 
 
-def scrape_justjoin() -> list[Offer]:
-    offers = []
-    for slug in ["all-locations", "all-locations/devops", "all-locations/admin"]:
+def _scrape_jjit_family(base: str, slugs: list[str], source: str) -> list[Offer]:
+    import time
+
+    offers: dict[str, Offer] = {}
+    for slug in slugs:
         try:
-            html = _get(f"https://justjoin.it/job-offers/{slug}", timeout=40).decode("utf-8", "replace")
-            offers.extend(_parse_jjit_cards(html, "justjoin.it"))
+            html = _get(f"{base}/{slug}", timeout=40).decode("utf-8", "replace")
+            for o in _parse_jjit_cards(html, source):
+                offers.setdefault(o.dedup_key, o)
+            time.sleep(FETCH_DELAY)
         except Exception as e:
-            log.warning("justjoin.it scrape failed for %s: %s", slug, e)
-    uniq = {o.dedup_key: o for o in offers}
-    log.info("justjoin.it: %d offers", len(uniq))
-    return list(uniq.values())
+            log.warning("%s scrape failed for %s: %s", source, slug, e)
+    log.info("%s: %d offers", source, len(offers))
+    return list(offers.values())
+
+
+def scrape_justjoin() -> list[Offer]:
+    return _scrape_jjit_family(
+        "https://justjoin.it/job-offers",
+        ["warszawa", "remote", "all-locations/devops", "all-locations/admin", "all-locations/support"],
+        "justjoin.it",
+    )
 
 
 def scrape_rocketjobs() -> list[Offer]:
-    offers = []
-    for slug in ["wszystkie-lokalizacje/it", "wszystkie-lokalizacje"]:
-        try:
-            html = _get(f"https://rocketjobs.pl/oferty-pracy/{slug}", timeout=40).decode("utf-8", "replace")
-            offers.extend(_parse_jjit_cards(html, "rocketjobs.pl"))
-        except Exception as e:
-            log.warning("rocketjobs.pl scrape failed for %s: %s", slug, e)
-    uniq = {o.dedup_key: o for o in offers}
-    log.info("rocketjobs.pl: %d offers", len(uniq))
-    return list(uniq.values())
+    return _scrape_jjit_family(
+        "https://rocketjobs.pl/oferty-pracy",
+        ["warszawa", "wszystkie-lokalizacje/it", "wszystkie-lokalizacje"],
+        "rocketjobs.pl",
+    )
 
 
 # --------------------------------------------------------------------------
-# czyjesteldorado.pl  — Next.js app; best-effort JSON-LD / heading scrape.
-# The site aggressively blocks some datacenter IPs; failure is non-fatal.
+# czyjesteldorado.pl — /search endpoint; datacenter-blocked, works from
+# residential IPs (the self-hosted worker). ELDORADO_DEBUG=1 dumps raw HTML.
 # --------------------------------------------------------------------------
-
-def scrape_eldorado() -> list[Offer]:
-    """Scrape czyjesteldorado.pl /search pages.
-
-    The site blocks datacenter IPs; from a residential IP (the self-hosted
-    worker) the pages render server-side with offer cards as <article> or
-    list markup. Parses title/company/salary/location/skills from card text;
-    URL is linked from the card when present.
-    """
-    offers = []
-    queries = ["administrator", "it+support", "helpdesk"]
-    for q in queries:
-        try:
-            html = _get(f"https://czyjesteldorado.pl/search?q={q}", timeout=45).decode("utf-8", "replace")
-            if os.getenv("ELDORADO_DEBUG"):
-                Path("/tmp/eldorado_search.html").write_text(html, encoding="utf-8")
-                log.info("ELDORADO_DEBUG: saved /tmp/eldorado_search.html (%d bytes)", len(html))
-            offers.extend(_parse_search_cards(html))
-        except Exception as e:
-            log.warning("czyjesteldorado.pl scrape failed for q=%s: %s", q, e)
-    uniq = {o.dedup_key: o for o in offers}
-    log.info("czyjesteldorado.pl: %d offers", len(uniq))
-    return list(uniq.values())
-
-
-SCRAPERS = {
-    "pracuj.pl": scrape_pracuj,
-    "justjoin.it": scrape_justjoin,
-    "rocketjobs.pl": scrape_rocketjobs,
-    "czyjesteldorado.pl": scrape_eldorado,
-}
-
-
-def scrape_all() -> tuple[list[Offer], dict[str, str]]:
-    """Run every scraper; return merged offers and per-board status."""
-    all_offers: dict[str, Offer] = {}
-    status: dict[str, str] = {}
-    for name, fn in SCRAPERS.items():
-        try:
-            got = fn()
-            status[name] = f"ok ({len(got)} offers)"
-            for o in got:
-                all_offers.setdefault(o.dedup_key, o)
-        except Exception as e:
-            status[name] = f"error: {e}"
-    return list(all_offers.values()), status
-
 
 def _parse_search_cards(html: str) -> list[Offer]:
-    """Parse offer cards from a czyjesteldorado.pl /search page.
-
-    Cards render as headings followed by company/location/seniority text and
-    skill chips; best-effort structured extraction used until the exact
-    markup is confirmed from a reachable IP (set ELDORADO_DEBUG=1 on the
-    worker to dump the raw page for parser tuning).
-    """
     offers = []
     h3_re = re.compile(r'<h3[^>]*>(?P<inner>.*?)</h3>', re.S)
     for m in h3_re.finditer(html):
@@ -282,8 +279,10 @@ def _parse_search_cards(html: str) -> list[Offer]:
             r'(?P<sal>\d[\d\u00a0.,]*\s*[\u2013-]\s*\d[\d\u00a0.,]*)\s*z\u0142', after
         )
         skills = re.findall(r'>([A-Za-z0-9.#/+\-]{2,30})</', after)[:8]
-        # company/location/seniority render adjacent to the title in card text
-        loc_m = re.search(r'(Warszawa|Zdalnie|Krak\u00f3w|Wroc\u0142aw|Gda\u0144sk|Pozna\u0144|\u0141\u00f3d\u017a|Katowice|Szczecin|Lublin|Bia\u0142ystok|Bydgoszcz|Hybrydowo)', after)
+        loc_m = re.search(
+            r'(Warszawa|Zdalnie|Krak\u00f3w|Wroc\u0142aw|Gda\u0144sk|Pozna\u0144|'
+            r'\u0141\u00f3d\u017a|Katowice|Szczecin|Lublin|Hybrydowo|Hybryda)', after
+        )
         offers.append(Offer(
             title=title[:120],
             url=link_m.group("url") if link_m else "",
@@ -293,3 +292,88 @@ def _parse_search_cards(html: str) -> list[Offer]:
             source="czyjesteldorado.pl",
         ))
     return offers
+
+
+def scrape_eldorado() -> list[Offer]:
+    import time
+
+    offers: dict[str, Offer] = {}
+    queries = [
+        "administrator systemów", "administrator it", "it support",
+        "helpdesk", "administrator serwerów", "administrator sieci",
+        "system administrator", "windows administrator",
+    ]
+    pages = int(os.getenv("ELDORADO_PAGES", "3"))
+    for q in queries:
+        q_enc = urllib.parse.quote(q, safe="")
+        for page in range(1, pages + 1):
+            try:
+                u = f"https://czyjesteldorado.pl/search?q={q_enc}&page={page}"
+                html = _get(u, timeout=45).decode("utf-8", "replace")
+                if page == 1 and os.getenv("ELDORADO_DEBUG"):
+                    Path("/tmp/eldorado_search.html").write_text(html, encoding="utf-8")
+                    log.info("ELDORADO_DEBUG: saved /tmp/eldorado_search.html (%d bytes)", len(html))
+                got = _parse_search_cards(html)
+                if not got and page > 1:
+                    break
+                for o in got:
+                    offers.setdefault(o.dedup_key, o)
+                time.sleep(FETCH_DELAY)
+            except Exception as e:
+                log.warning("czyjesteldorado.pl scrape failed for q=%s page=%d: %s", q, page, e)
+                break
+    log.info("czyjesteldorado.pl: %d offers", len(offers))
+    return list(offers.values())
+
+
+SCRAPERS = {
+    "czyjesteldorado.pl": scrape_eldorado,
+    "pracuj.pl": scrape_pracuj,
+    "justjoin.it": scrape_justjoin,
+    "rocketjobs.pl": scrape_rocketjobs,
+}
+
+# Lower index wins when the same offer appears on multiple boards.
+SCRAPE_ORDER = ["czyjesteldorado.pl", "pracuj.pl", "justjoin.it", "rocketjobs.pl"]
+
+
+def scrape_all() -> tuple[list[Offer], dict[str, str]]:
+    """Run every scraper; merge with the cross-site dedup fuse.
+
+    The same offer is often present on many sites. Dedup happens in two
+    layers: (1) title+company normalized key, (2) identical target URL.
+    The first board to report an offer (SCRAPE_ORDER) keeps it, so each
+    digest entry appears exactly once.
+    """
+    per_board: dict[str, list[Offer]] = {}
+    status: dict[str, str] = {}
+    for name in SCRAPE_ORDER:
+        try:
+            got = SCRAPERS[name]()
+            per_board[name] = got
+            status[name] = f"ok ({len(got)} offers)"
+        except Exception as e:
+            per_board[name] = []
+            status[name] = f"error: {e}"
+
+    merged: dict[str, Offer] = {}
+    url_seen: set[str] = set()
+    duplicates = 0
+    for name in SCRAPE_ORDER:
+        for o in per_board.get(name, []):
+            key = o.dedup_key
+            ukey = o.url_key
+            # remember every URL even for dropped duplicates, so a later
+            # offer with a different title but the same target URL is caught
+            if ukey:
+                if ukey in url_seen:
+                    duplicates += 1
+                    continue
+                url_seen.add(ukey)
+            if key in merged:
+                duplicates += 1
+                continue
+            merged[key] = o
+    log.info("merged %d unique offers (%d cross-site duplicates dropped)",
+             len(merged), duplicates)
+    return list(merged.values()), status

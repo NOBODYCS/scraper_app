@@ -23,17 +23,21 @@ def _offer_row(m: dict, idx: int) -> str:
     skills = ", ".join((_g(o, "skills") or [])[:8])
     skills_h = html_mod.escape(skills) if skills else "—"
     url = html_mod.escape(_g(o, "url"))
+    source = html_mod.escape(_g(o, "source") or "")
+    reason = html_mod.escape(m.get("llm_reason") or "")
     loc_txt = loc
     if re.search(r"zdaln|remote", f"{location} {work_mode}", re.I):
         loc_txt = "Zdalnie/Remote"
     elif re.search(r"warszawa|warsaw", loc, re.I):
         loc_txt = f"Warszawa · {html_mod.escape(work_mode or '')}"
+    reason_html = f'<div style="color:#0a7d33;font-size:11px">🤖 {reason}</div>' if reason else ""
     return f"""<tr>
 <td style="padding:6px 8px;font-weight:600">{idx}</td>
 <td style="padding:6px 8px">
   <div style="font-weight:700;font-size:14px"><a href="{url}">{title}</a></div>
-  <div style="color:#555;font-size:12px">{company} · {loc_txt}</div>
+  <div style="color:#555;font-size:12px">{company} · {loc_txt} · <span style="color:#999">{source}</span></div>
   <div style="color:#777;font-size:12px">Skills: {skills_h}</div>
+  {reason_html}
 </td>
 <td style="padding:6px 8px;text-align:center;font-weight:700">{m['match']}%</td>
 </tr>"""

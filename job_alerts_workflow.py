@@ -1,4 +1,4 @@
-"""job-alerts workflow: scrape Polish job boards daily, match to profile, email via Gmail.
+"""job-alerts workflow: deep-scrape Polish job boards, two-stage match, email via Gmail.
 
 Regular (non-OBO) workflow: connector credentials resolve from the worker's
 identity, i.e. the Mistral API key the worker runs under. Run the worker with
@@ -21,7 +21,7 @@ from mistralai.workflows.plugins.mistralai.connectors import (
 )
 
 from email_builder import build_email
-from matcher import match_offers
+from matcher import llm_rescore, match_offers
 from scrapers import scrape_all
 
 log = logging.getLogger("job-alerts.workflow")
@@ -32,18 +32,22 @@ gmail_connector = connector("gmail")
 class JobAlertsInput(pydantic.BaseModel):
     recipient: str = "wcieslak99@proton.me"
     dry_run: bool = False
+    llm_match: bool = True
 
 
 @workflows.activity(name="collect-and-match")
-async def collect_and_match() -> dict:
+async def collect_and_match(llm_match: bool) -> dict:
     offers, status = scrape_all()
     matches = match_offers(offers)
-    log.info("total offers: %d, matches: %d", len(offers), len(matches))
-    # Serialize to plain dicts: Temporal payload conversion turns dataclasses
-    # into dicts between activities anyway, so keep the shape explicit.
+    log.info("total offers: %d, stage-1 matches: %d", len(offers), len(matches))
+    if llm_match:
+        matches = await llm_rescore(matches)
+        log.info("stage-2 (LLM) matches: %d", len(matches))
     serializable = [
         {
             "match": m["match"],
+            "llm_score": m.get("llm_score"),
+            "llm_reason": m.get("llm_reason", ""),
             "offer": {
                 "title": m["offer"].title,
                 "company": m["offer"].company,
@@ -90,7 +94,7 @@ async def send_digest(
 class JobAlertsWorkflow:
     @workflows.workflow.entrypoint
     async def run(self, prompt: JobAlertsInput) -> dict:
-        data = await collect_and_match()
+        data = await collect_and_match(prompt.llm_match)
         return await send_digest(
             data["matches"], data["status"], prompt.recipient, prompt.dry_run
         )
