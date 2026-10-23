@@ -44,18 +44,21 @@ SKILL_WEIGHTS: list[tuple[str, int]] = [
     (r"\b(mid|regular)\b", 8),
     # Level direction
     (r"\b(junior|młodszy|młodsza|mlodszy|stażysta|intern)\b", -15),
-    (r"\b(helpdesk|help desk|service desk|wsparcie techniczne|1st line|first line|linia wsparcia)\b", -20),
+    (r"\b(helpdesk|help desk|service desk|wsparcie techniczne|1st line|first line|linia wsparcia)\b", -15),
     (r"\b(senior|lead|architect|gł[oó]wny|starsz)\b", -10),
     # NOT a developer / wrong discipline
     (r"\b(developer|programista|software engineer|backend|frontend|fullstack|full[- ]stack)\b", -35),
-    (r"\b(java(?!script)|sap abap|flutter|swift|kotlin)\b", -25),
-    # HARD GAPS from the baseline — heavy penalty when the offer demands them
-    (r"\b(kubernetes|k8s|helm|ci/cd|cicd|jenkins|gitlab ci|argo)\b", -18),
-    (r"\b(terraform|ansible|puppet)\b", -12),
-    (r"\b(azure\s?(vm|vnet|iaas)|aws|gcp|google cloud|cloud engineer|cloud architect)\b", -14),
-    (r"\b(oracle|dba|database administrator|postgresql|mysql|t[- ]sql|mssql)\b", -12),
+    (r"\b(java(?!script)|sap abap|flutter|swift|kotlin)\b", -35),
+    # HARD GAPS from the baseline (weights recalibrated 2026-10-23):
+    # kubernetes/ci-cd, terraform/ansible and cloud lines carry NO regex
+    # penalty — adjacent/learnable tooling should not hide offers from the
+    # digest; the stage-2 LLM still judges them as requirements.
+    # Database penalty covers query-level/DBA work; mssql is deliberately
+    # excluded — server-level MSSQL upkeep is the candidate's documented
+    # level, and regex cannot tell upkeep from DBA work (LLM judges).
+    (r"\b(oracle|dba|database administrator|administrator baz danych|postgresql|mysql|t[- ]sql)\b", -15),
     (r"\b(rhel|red hat|rhcsa|rhce)\b", -10),
-    (r"\b(cissp|cism|ccsp|mcse|certif)\b", -6),
+    (r"\b(cissp|cism|ccsp|mcse|certif)\b", -10),
 ]
 
 # Companies Wojciech would want to hear from even below the normal bar:
@@ -100,10 +103,7 @@ def location_ok(offer) -> bool:
 # tags, not hard requirements, so they are penalized at 1/3 weight and the
 # stage-2 LLM makes the real call.
 HARD_GAP_PATTERNS = re.compile(
-    r"\b(kubernetes|k8s|helm|ci/cd|cicd|jenkins|gitlab ci|argo|"
-    r"terraform|ansible|puppet|"
-    r"azure\s?(?:vm|vnet|iaas)|aws|gcp|google cloud|cloud engineer|cloud architect|"
-    r"oracle|dba|database administrator|postgresql|mysql|t[- ]sql|mssql|"
+    r"\b(oracle|dba|database administrator|administrator baz danych|postgresql|mysql|t[- ]sql|"
     r"rhel|red hat|rhcsa|rhce|"
     r"cissp|cism|ccsp|mcse|certif)",
     re.I,
