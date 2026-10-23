@@ -11,6 +11,5 @@ WORKDIR /app
 RUN pip install --no-cache-dir "mistralai-workflows[mistralai]>=3.10"
 
 COPY worker.py job_alerts_workflow.py scrapers.py matcher.py email_builder.py ./
-COPY data/cv ./data/cv
 
 CMD ["python", "worker.py"]

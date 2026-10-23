@@ -1,7 +1,7 @@
 # scraper_app
 
 Daily Polish job-board scraper + profile matcher + Gmail digest, running as a
-Mistral managed workflow.
+self-hosted Mistral workflow worker (Docker / Portainer).
 
 ## What it does
 
@@ -13,23 +13,23 @@ Mistral managed workflow.
 2. Scores each offer 0-100% against Wojciech's competency profile
    (IT Systems Engineer: Windows/Linux, AD/M365/Entra/Intune, virtualization,
    networking, monitoring, automation) — `matcher.py`
-   Hard location filter: offers must be EITHER Warsaw (local/hybrid) OR fully
-   remote — everything else is discarded.
-3. Sends a daily digest email via the Gmail connector (on-behalf-of user)
-   with the TOP 15 matches and the best-fitting approved CV variant attached
-   (`data/cv/` — selection only, content is never modified).
+   - Only matches ≥ 70% are included.
+   - Hard location filter: offers must be EITHER Warsaw (local/hybrid) OR
+     fully remote — everything else is discarded.
+3. Sends a daily digest email via the Gmail connector with the TOP 20 matches.
 
 ## Running (self-hosted)
 
-The worker self-registers the `job-alerts` workflow with Mistral and a daily
+The worker self-registers the `job-alerts` workflow with Mistral; a daily
 schedule triggers it. Gmail connector credentials resolve from the worker's
 identity — run it with Wojciech's personal Mistral API key.
 
-    cp .env.example .env   # set MISTRAL_API_KEY
-    docker compose up -d --build
+Portainer stack: use `docker-compose.yml` (image `ghcr.io/nobodycs/scraper_app:latest`),
+set `MISTRAL_API_KEY` as a stack environment variable.
 
-Daily schedule (Mistral side) triggers the registered `job-alerts` workflow.
+Every push to `main` rebuilds the image via GitHub Actions (with a live
+scrape smoke test) and publishes to GHCR.
 
-Pipeline-only test:
+## Pipeline-only test
 
     python -c "from scrapers import scrape_all; from matcher import match_offers; o,s=scrape_all(); print(s, len(o), len(match_offers(o)))"

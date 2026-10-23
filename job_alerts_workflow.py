@@ -31,7 +31,6 @@ gmail_connector = connector("gmail")
 
 class JobAlertsInput(pydantic.BaseModel):
     recipient: str = "wcieslak99@proton.me"
-    max_matches: int = 15
     dry_run: bool = False
 
 
@@ -52,9 +51,9 @@ async def send_digest(
     gmail: ToolCallClient = Depends(gmail_connector),
 ) -> dict:
     date_str = datetime.now().strftime("%Y-%m-%d")
-    subject, html_body, attachments = build_email(matches, status, date_str)
+    subject, html_body = build_email(matches, status, date_str)
     if dry_run:
-        log.info("dry-run: would send %r to %s with %d attachments", subject, recipient, len(attachments))
+        log.info("dry-run: would send %r to %s", subject, recipient)
         return {"subject": subject, "sent": False}
     result = await gmail.call_tool(
         tool_name="send_email",
@@ -62,7 +61,6 @@ async def send_digest(
             "to": [recipient],
             "subject": subject,
             "htmlBody": html_body,
-            "attachments": attachments,
         },
     )
     log.info("email sent: %s", result)
