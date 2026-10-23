@@ -73,7 +73,7 @@ async def send_digest(
     gmail: ToolCallClient = Depends(gmail_connector),
 ) -> dict:
     date_str = datetime.now().strftime("%Y-%m-%d")
-    subject, html_body = build_email(matches, status, date_str)
+    subject, html_body, plain_body = build_email(matches, status, date_str)
     if dry_run:
         log.info("dry-run: would send %r to %s", subject, recipient)
         return {"subject": subject, "sent": False}
@@ -82,6 +82,7 @@ async def send_digest(
         arguments={
             "to": [recipient],
             "subject": subject,
+            "body": plain_body,
             "htmlBody": html_body,
         },
     )
