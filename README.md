@@ -1,4 +1,4 @@
-# job-alerts
+# scraper_app
 
 Daily Polish job-board scraper + profile matcher + Gmail digest, running as a
 Mistral managed workflow.
@@ -13,6 +13,8 @@ Mistral managed workflow.
 2. Scores each offer 0-100% against Wojciech's competency profile
    (IT Systems Engineer: Windows/Linux, AD/M365/Entra/Intune, virtualization,
    networking, monitoring, automation) — `matcher.py`
+   Hard location filter: offers must be EITHER Warsaw (local/hybrid) OR fully
+   remote — everything else is discarded.
 3. Sends a daily digest email via the Gmail connector (on-behalf-of user)
    with the TOP 15 matches and the best-fitting approved CV variant attached
    (`data/cv/` — selection only, content is never modified).

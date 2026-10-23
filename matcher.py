@@ -41,7 +41,20 @@ ROLE_GATE = re.compile(
     re.I,
 )
 
-LOCATION_OK = re.compile(r"(warszawa|zdaln|remote|hybryd|hybrid|cała polska|whole poland|^$)", re.I)
+# Hard location rule: offer must be EITHER Warsaw (local/hybrid) OR fully remote.
+WARSAW = re.compile(r"warszawa|warsaw|wwa|wola|mokot[óo]w|praga|ursyn[óo]w|bielany|bemowo|wilan[óo]w|żoliborz|blocha|ochota|śródmieście", re.I)
+REMOTE = re.compile(r"zdaln|remote|work from home|praca zdalna|ca[łl]a polska|whole poland|wielka brytania", re.I)
+HYBRID = re.compile(r"hybryd|hybrid", re.I)
+
+
+def location_ok(offer) -> bool:
+    """Warsaw local/hybrid OR fully remote. Everything else is rejected."""
+    text = f"{offer.location or ''} {offer.work_mode or ''} {offer.title or ''}"
+    if REMOTE.search(text):
+        return True
+    if WARSAW.search(text):
+        return True
+    return False
 
 
 def score_offer(offer) -> int:
@@ -58,18 +71,19 @@ def score_offer(offer) -> int:
 
 
 def match_offers(offers: list) -> list[dict]:
-    """Return scored offers above threshold, best first."""
+    """Return scored offers above threshold, best first.
+
+    Hard location filter: Warsaw local/hybrid OR fully remote — nothing else.
+    """
     results = []
     for o in offers:
         if not ROLE_GATE.search(o.title or ""):
             continue
+        if not location_ok(o):
+            continue
         s = score_offer(o)
         if s < 35:
             continue
-        results.append({
-            "offer": o,
-            "match": s,
-            "location_ok": bool(LOCATION_OK.search(o.location or "")),
-        })
-    results.sort(key=lambda r: (r["match"], r["location_ok"]), reverse=True)
+        results.append({"offer": o, "match": s})
+    results.sort(key=lambda r: r["match"], reverse=True)
     return results

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import html as html_mod
+import re
 from pathlib import Path
 
 CV_DIR = Path(__file__).parent / "data" / "cv"
@@ -35,16 +36,19 @@ def _offer_row(m: dict, idx: int) -> str:
     skills = ", ".join((o.skills or [])[:8])
     skills_h = html_mod.escape(skills) if skills else "—"
     url = html_mod.escape(o.url)
-    badge = "✔" if m["location_ok"] else "⚠"
+    loc_txt = f"{loc}"
+    if re.search(r"zdaln|remote", f"{o.location} {o.work_mode}", re.I):
+        loc_txt = "Zdalnie/Remote"
+    elif re.search(r"warszawa|warsaw", loc, re.I):
+        loc_txt = f"Warszawa · {html_mod.escape(o.work_mode or '')}"
     return f"""<tr>
 <td style="padding:6px 8px;font-weight:600">{idx}</td>
 <td style="padding:6px 8px">
   <div style="font-weight:700;font-size:14px"><a href="{url}">{title}</a></div>
-  <div style="color:#555;font-size:12px">{company} · {loc} · {html_mod.escape(o.work_mode or "")}</div>
+  <div style="color:#555;font-size:12px">{company} · {loc_txt}</div>
   <div style="color:#777;font-size:12px">Skills: {skills_h}</div>
 </td>
 <td style="padding:6px 8px;text-align:center;font-weight:700">{m['match']}%</td>
-<td style="padding:6px 8px;text-align:center">{badge}</td>
 </tr>"""
 
 
@@ -79,10 +83,10 @@ def build_email(matches: list[dict], board_status: dict[str, str], date_str: str
 <table border="1" cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:13px">
 <thead><tr style="background:#f0f0f5">
 <th style="padding:6px 8px">#</th><th style="padding:6px 8px;text-align:left">Oferta</th>
-<th style="padding:6px 8px">Match</th><th style="padding:6px 8px">Lokalizacja</th>
+<th style="padding:6px 8px">Match</th>
 </tr></thead>
 <tbody>{rows}</tbody></table>
-<p style="font-size:12px;color:#666">✔ = lokalizacja OK (Warszawa / zdalnie / hybrydowo); ⚠ = inna lokalizacja</p>
+<p style="font-size:12px;color:#666">Filtr lokalizacji: tylko Warszawa (stacjonarnie/hybrydowo) lub w pełni zdalnie.</p>
 <p>Dobrany wariant CV dla najlepszej oferty: <b>{html_mod.escape(cv_name or "—")}</b>
 {" — załączony" if attachments else " (plik niedostępny)"}</p>
 <h3 style="font-size:13px">Status scrapowania</h3>
