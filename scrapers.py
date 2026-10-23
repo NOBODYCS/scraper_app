@@ -214,7 +214,7 @@ def _parse_jjit_cards(html: str, source: str, ctx_location: str = "") -> list[Of
         )
         mode_m = re.search(r'<p class="[^"]*">(Hybrid|Remote|Zdalnie|Hybrydowo|Stacjonarnie|On-site)</p>', before[-2500:])
         sal_m = re.search(
-            r'<span[^>]*>([\d.,\u00a0\s]+?(?:-\s*[\d.,\u00a0\s]+?)?)</span><!--[^>]*-->'
+            r'<span[^>]*>([\d., \s]+?(?:-\s*[\d., \s]+?)?)</span><!--[^>]*-->'
             r'\s*<span[^>]*>([A-Z]{2,4}/[a-z]+|[A-Z]{3})</span>',
             after[:2000],
         )
@@ -302,17 +302,17 @@ def _parse_search_cards(html: str) -> list[Offer]:
             continue
         after = html[m.end():m.end() + 1200]
         salary_m = re.search(
-            r'(?P<sal>\d[\d\u00a0.,]*\s*[\u2013-]\s*\d[\d\u00a0.,]*)\s*z\u0142', after
+            r'(?P<sal>\d[\d .,]*\s*[–-]\s*\d[\d .,]*)\s*zł', after
         )
         skills = re.findall(r'>([A-Za-z0-9.#/+\-]{2,30})</', after)[:8]
         loc_m = re.search(
-            r'(Warszawa|Zdalnie|Krak\u00f3w|Wroc\u0142aw|Gda\u0144sk|Pozna\u0144|'
-            r'\u0141\u00f3d\u017a|Katowice|Szczecin|Lublin|Hybrydowo|Hybryda)', after
+            r'(Warszawa|Zdalnie|Zdalna|Remote|Kraków|Wrocław|Gdańsk|Poznań|'
+            r'Łódź|Katowice|Szczecin|Lublin|Bydgoszcz|Hybrydowo|Hybryda|Hybryd)', after
         )
         offers.append(Offer(
             title=title[:120],
             url=link_m.group("url") if link_m else "",
-            salary=_strip_tags(salary_m.group("sal")) + " z\u0142" if salary_m else "",
+            salary=_strip_tags(salary_m.group("sal")) + " zł" if salary_m else "",
             location=loc_m.group(1) if loc_m else "",
             skills=[_strip_tags(s) for s in skills],
             source="czyjesteldorado.pl",
@@ -326,8 +326,10 @@ def scrape_eldorado() -> list[Offer]:
     offers: dict[str, Offer] = {}
     queries = [
         "administrator systemów", "administrator it", "it support",
-        "helpdesk", "administrator serwerów", "administrator sieci",
+        "administrator serwerów", "administrator sieci",
         "system administrator", "windows administrator",
+        "administrator warszawa", "inżynier systemów warszawa",
+        "administrator zdalnie",
     ]
     pages = int(os.getenv("ELDORADO_PAGES", "3"))
     for q in queries:
