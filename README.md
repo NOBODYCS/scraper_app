@@ -6,10 +6,12 @@ self-hosted Mistral workflow worker (Docker / Portainer).
 ## What it does
 
 1. Scrapes offers from:
-   - pracuj.pl (embedded `__NEXT_DATA__` JSON)
-   - justjoin.it (server-rendered offer cards)
-   - rocketjobs.pl (same platform markup as justjoin.it)
-   - czyjesteldorado.pl (best-effort; the site blocks some datacenter IPs)
+   - czyjesteldorado.pl via its OFFICIAL MCP server (search_jobs tool,
+     structured JSON: cities, work modes, salary range, seniority, keywords,
+     real offer URLs). Fallback: legacy HTML scraper. As an aggregator it
+     already indexes justjoin.it / rocketjobs.pl listings, so those boards
+     are redundant and their scrapers are disabled (code kept for reference).
+   - pracuj.pl (embedded `__NEXT_DATA__` JSON: full descriptions)
 2. Scores each offer 0-100% against Wojciech's competency profile
    (IT Systems Engineer: Windows/Linux, AD/M365/Entra/Intune, virtualization,
    networking, monitoring, automation) — `matcher.py`

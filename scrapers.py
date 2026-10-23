@@ -475,15 +475,16 @@ def _scrape_eldorado_html() -> list[Offer]:
     return list(offers.values())
 
 
+# czyjesteldorado aggregates the boards (incl. justjoin.it / rocketjobs.pl
+# listings), so those two are redundant sources — their scrapers are kept in
+# this file but disabled. Re-enable by adding them back to both dicts below.
 SCRAPERS = {
     "czyjesteldorado.pl": scrape_eldorado,
     "pracuj.pl": scrape_pracuj,
-    "justjoin.it": scrape_justjoin,
-    "rocketjobs.pl": scrape_rocketjobs,
 }
 
 # Lower index wins when the same offer appears on multiple boards.
-SCRAPE_ORDER = ["czyjesteldorado.pl", "pracuj.pl", "justjoin.it", "rocketjobs.pl"]
+SCRAPE_ORDER = ["czyjesteldorado.pl", "pracuj.pl"]
 
 
 def scrape_all() -> tuple[list[Offer], dict[str, str]]:
