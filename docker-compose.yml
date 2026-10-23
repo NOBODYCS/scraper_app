@@ -14,6 +14,8 @@ services:
       MISTRAL_API_KEY: ${MISTRAL_API_KEY:?set MISTRAL_API_KEY in stack env}
       # Digest recipient (defaults to wcieslak99@proton.me if unset)
       JOB_ALERTS_RECIPIENT: ${JOB_ALERTS_RECIPIENT:-wcieslak99@proton.me}
+      # Stable deployment identifier (defaults to scraper-app-local in the image)
+      DEPLOYMENT_NAME: ${DEPLOYMENT_NAME:-scraper-app-local}
     logging:
       driver: json-file
       options:

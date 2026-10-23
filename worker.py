@@ -10,6 +10,8 @@ import asyncio
 import logging
 import os
 
+os.environ.setdefault("DEPLOYMENT_NAME", "scraper-app-local")
+
 import mistralai.workflows as workflows
 
 import job_alerts_workflow
@@ -19,7 +21,10 @@ log = logging.getLogger("job-alerts")
 
 if os.getenv("JOB_ALERTS_RECIPIENT"):
     log.info("recipient override: %s", os.getenv("JOB_ALERTS_RECIPIENT"))
-log.info("job-alerts worker starting")
+log.info(
+    "job-alerts worker starting (deployment: %s)",
+    os.environ["DEPLOYMENT_NAME"],
+)
 
 
 async def main() -> None:
