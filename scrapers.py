@@ -320,25 +320,48 @@ def _parse_search_cards(html: str) -> list[Offer]:
     return offers
 
 
+ELDORADO_DELAY = float(os.getenv("ELDORADO_DELAY", "4.0"))
+
+
+def _eldorado_get(url: str, timeout: int = 45) -> str:
+    """GET with 429 backoff: eldorado rate-limits aggressive scrapers."""
+    import time
+
+    for attempt in range(3):
+        try:
+            return _get(url, timeout=timeout).decode("utf-8", "replace")
+        except urllib.error.HTTPError as e:
+            if e.code in (429, 503) and attempt < 2:
+                wait = 30 * (attempt + 1)
+                log.warning("czyjesteldorado.pl rate-limited (%d), backing off %ds", e.code, wait)
+                time.sleep(wait)
+                continue
+            raise
+    raise RuntimeError(f"eldorado GET failed after retries: {url}")
+
+
 def scrape_eldorado() -> list[Offer]:
     import time
 
     offers: dict[str, Offer] = {}
+    # High-yield queries only: location-targeted terms let the site's own
+    # search do the filtering, so fewer requests cover more ground.
     queries = [
-        "administrator systemów", "administrator it", "it support",
-        "administrator serwerów", "administrator sieci",
-        "system administrator", "windows administrator",
-        "administrator warszawa", "inżynier systemów warszawa",
+        "administrator warszawa",
         "administrator zdalnie",
+        "administrator systemów",
+        "administrator it",
+        "inżynier systemów warszawa",
+        "it support warszawa",
     ]
-    pages = int(os.getenv("ELDORADO_PAGES", "3"))
+    pages = int(os.getenv("ELDORADO_PAGES", "2"))
     for q in queries:
         q_enc = urllib.parse.quote(q, safe="")
         for page in range(1, pages + 1):
             try:
                 u = f"https://czyjesteldorado.pl/search?q={q_enc}&page={page}"
-                html = _get(u, timeout=45).decode("utf-8", "replace")
-                if page == 1 and os.getenv("ELDORADO_DEBUG"):
+                html = _eldorado_get(u)
+                if page == 1 and q == queries[0] and os.getenv("ELDORADO_DEBUG"):
                     Path("/tmp/eldorado_search.html").write_text(html, encoding="utf-8")
                     log.info("ELDORADO_DEBUG: saved /tmp/eldorado_search.html (%d bytes)", len(html))
                 got = _parse_search_cards(html)
@@ -346,7 +369,7 @@ def scrape_eldorado() -> list[Offer]:
                     break
                 for o in got:
                     offers.setdefault(o.dedup_key, o)
-                time.sleep(FETCH_DELAY)
+                time.sleep(ELDORADO_DELAY)
             except Exception as e:
                 log.warning("czyjesteldorado.pl scrape failed for q=%s page=%d: %s", q, page, e)
                 break
