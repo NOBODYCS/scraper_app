@@ -21,7 +21,7 @@ log = logging.getLogger("job-alerts.matcher")
 # (do not overvalue); hard gaps = kubernetes/CI-CD, query SQL, cloud IaaS, certs.
 SKILL_WEIGHTS: list[tuple[str, int]] = [
     # Role identity — specific forms strongest...
-    (r"\b(system(?:s)? administrator|administrator system[oó]w|sysadmin|it administrator|administrator it|system(?:s)? engineer|inżynier system[oó]w|it systems engineer|systems and infrastructure)\b", 30),
+    (r"\b(system(?:s)? administrator|administrator system[oó]w|sysadmin|it administrator|administrator it|system(?:s)? engineer|inżynier system(?:[oó]w|owy|owe)|it systems engineer|systems and infrastructure)\b", 30),
     # ...generic "Administrator <something>" weaker signal
     (r"\b(administrator|administratorka)\b", 12),
     # STRONGEST competencies (baseline: intermediate-strong / strong)
@@ -60,6 +60,10 @@ SKILL_WEIGHTS: list[tuple[str, int]] = [
     (r"\b(rhel|red hat|rhcsa|rhce)\b", -10),
     (r"\b(cissp|cism|ccsp|mcse|certif)\b", -10),
 ]
+
+# The +30 role-identity patterns (first SKILL_WEIGHTS row) — used by the
+# enrichment step to catch title-perfect offers with thin tag data.
+ROLE_IDENTITY = SKILL_WEIGHTS[0][0]
 
 # Companies Wojciech would want to hear from even below the normal bar:
 # these get into stage 2 at >=30 instead of >=50. The match % itself stays
@@ -129,31 +133,34 @@ def score_offer(offer) -> int:
     return max(0, min(100, score))
 
 
-def match_offers(offers: list) -> list[dict]:
-    """Stage 1: gate + score. Returns [{'offer': Offer, 'match': int}].
-
-    Broad-recall filter: boards differ in how much text an offer carries
-    (pracuj gives full descriptions, justjoin only title+skills). The score
-    threshold scales with available signal: 50 with a description, 35
-    without. Stage 2 (LLM) then re-scores with real judgment and drops
-    the ones that don't hold up.
-    """
-    results = []
+def gate_offers(offers: list) -> list:
+    """Stage 1a: cheap gates only — role title + location. No scoring here,
+    so thin-data offers (eldorado MCP cards) survive to be enriched."""
+    out = []
     for o in offers:
         if not ROLE_GATE.search(o.title or ""):
             continue
         if not location_ok(o):
             continue
+        out.append(o)
+    return out
+
+
+def match_offers(offers: list) -> list[dict]:
+    """Stage 1: gate + score. Returns [{'offer': Offer, 'match': int}].
+
+    Called AFTER enrichment: the caller gates with gate_offers(), enriches
+    the survivors (full posting text where fetchable), then scores here.
+    The score threshold scales with available signal: 50 with a description,
+    40 tag-only. Stage 2 (LLM) then re-scores with real judgment.
+    """
+    results = []
+    for o in offers:
         s = score_offer(o)
         has_desc = bool((o.description or "").strip())
-        # description-less boards (justjoin/rocketjobs cards) score lower on
-        # the same fit because there is less text to match keywords in —
-        # relax the cutoff there and let stage 2 (LLM) do the precision work.
         threshold = 50 if has_desc else 40
         # dream companies: entry bar relaxed to 20 — the % stays honest,
-        # stage 2 still judges the real fit. A dream offer with real title
-        # identity (+30) and only tag-level gaps lands ~20-30 and deserves
-        # the LLM's attention.
+        # stage 2 still judges the real fit
         if s < threshold and is_dream_company(o.company):
             threshold = 20
         if s < threshold:

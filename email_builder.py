@@ -42,14 +42,12 @@ def _loc_short(location: str, work_mode: str) -> str:
     return (location or "—")[:18]
 
 
-def _row(m: dict, idx: int) -> str:
+def _row(m: dict, idx: int, dream: bool = False) -> str:
     o = m["offer"]
     title = html_mod.escape(_g(o, "title"))
     company = html_mod.escape(_g(o, "company") or "")
     url = html_mod.escape(_g(o, "url"))
     source = html_mod.escape(_g(o, "source") or "")
-    from matcher import is_dream_company
-    star = " ⭐" if is_dream_company(_g(o, "company")) else ""
     salary = _g(o, "salary") or ""
     sal_h = f' · <b style="color:{INK}">{html_mod.escape(salary)}</b>' if salary else ""
     skills = " · ".join((_g(o, "skills") or [])[:5])
@@ -59,10 +57,12 @@ def _row(m: dict, idx: int) -> str:
         f'<a href="{url}" style="color:{INK};font-weight:700;text-decoration:none">{title}</a>'
         if url else f'<span style="color:{INK};font-weight:700">{title}</span>'
     )
-    return f"""<tr style="border-bottom:1px solid {LINE}">
-<td style="padding:7px 10px;vertical-align:top;width:34px;color:{FAINT};font-size:12px;font-weight:700">{idx}</td>
+    bg = f"background:#fdf6ec;" if dream else ""
+    bar = f"border-left:3px solid #d4a017;" if dream else "border-left:3px solid transparent;"
+    return f"""<tr style="border-bottom:1px solid {LINE};{bg}">
+<td style="padding:7px 10px;vertical-align:top;width:34px;color:{FAINT};font-size:12px;font-weight:700;{bar}">{idx}</td>
 <td style="padding:7px 4px;vertical-align:top">
-  {title_html}{star}<span style="color:{MUTED};font-size:12px"> · {company} · {_loc_short(_g(o,'location'), _g(o,'work_mode'))}{sal_h}{skills_h}</span>
+  {title_html}<span style="color:{MUTED};font-size:12px"> · {company} · {_loc_short(_g(o,'location'), _g(o,'work_mode'))}{sal_h}{skills_h}</span>
   {f'<div style="color:{GREEN};font-size:11px">🤖 {reason}</div>' if reason else ''}
 </td>
 <td style="padding:7px 10px;vertical-align:top;text-align:right">{_badge(m['match'])}</td>
@@ -71,8 +71,16 @@ def _row(m: dict, idx: int) -> str:
 
 def build_email(matches: list[dict], board_status: dict[str, str], date_str: str) -> tuple[str, str, str]:
     """Return (subject, html_body, plain_text)."""
+    from matcher import is_dream_company
     top = matches[:25]
-    rows = "".join(_row(m, i + 1) for i, m in enumerate(top))
+    # dream companies pinned at the top (each group by match desc), then the rest
+    dream = [m for m in top if is_dream_company(_g(m["offer"], "company"))]
+    normal = [m for m in top if not is_dream_company(_g(m["offer"], "company"))]
+    rows = "".join(
+        _row(m, i + 1, dream=True) for i, m in enumerate(dream)
+    ) + "".join(
+        _row(m, i + 1 + len(dream), dream=False) for i, m in enumerate(normal)
+    )
     n = len(matches)
     remote_n = sum(
         1 for m in matches

@@ -481,6 +481,70 @@ def _scrape_eldorado_html() -> list[Offer]:
 # czyjesteldorado aggregates the boards (incl. justjoin.it / rocketjobs.pl
 # listings), so those two are redundant sources — their scrapers are kept in
 # this file but disabled. Re-enable by adding them back to both dicts below.
+
+
+# ---------------------------------------------------------------------------
+# Offer enrichment: fetch the offer's detail page and extract the full
+# posting text (JSON-LD JobPosting description). Eldorado blocks datacenter
+# IPs for HTML pages but the self-hosted worker runs on a residential IP.
+# Failure-safe: no description -> the offer keeps its tag-only signal.
+# ---------------------------------------------------------------------------
+
+ENRICH_TIMEOUT = int(os.getenv("ENRICH_TIMEOUT", "25"))
+ENRICH_DELAY = float(os.getenv("ENRICH_DELAY", "1.0"))
+
+
+def _strip_html(s: str) -> str:
+    s = re.sub(r"<[^>]+>", " ", s or "")
+    s = html_mod.unescape(s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def enrich_offer(offer: Offer) -> Offer:
+    """Fetch the offer detail page and fill offer.description with the
+    posting text. Only czyjesteldorado.pl offers are enriched (their MCP
+    gives no description); pracuj offers already carry one."""
+    if offer.description or not offer.url or "czyjesteldorado.pl" not in offer.url:
+        return offer
+    try:
+        html = _get(offer.url, timeout=ENRICH_TIMEOUT).decode("utf-8", "replace")
+        m = re.search(
+            r'<script type="application/ld\+json">(.*?)</script>', html, re.S
+        )
+        if m:
+            try:
+                j = json.loads(m.group(1))
+                desc = _strip_html(j.get("description", ""))[:2000]
+                if desc:
+                    offer.description = desc
+            except json.JSONDecodeError:
+                pass
+        if not offer.description:
+            # fallback: meta description
+            mm = re.search(r'name="description" content="([^"]{40,})"', html)
+            if mm:
+                offer.description = _strip_html(mm.group(1))[:2000]
+    except Exception as e:
+        log.info("enrich failed for %s: %s", offer.url, str(e)[:80])
+    return offer
+
+
+def enrich_offers(offers: list, max_count: int | None = None) -> list:
+    """Enrich gated candidates in place. Only offers lacking a description
+    are fetched; pass the post-gate candidate list, not the raw pool."""
+    import time
+
+    todo = [o for o in offers if not o.description and o.url and "czyjesteldorado.pl" in o.url]
+    if max_count:
+        todo = todo[:max_count]
+    log.info("enriching %d offers (of %d candidates)", len(todo), len(offers))
+    for i, o in enumerate(todo):
+        enrich_offer(o)
+        if i < len(todo) - 1:
+            time.sleep(ENRICH_DELAY)
+    return offers
+
+
 SCRAPERS = {
     "czyjesteldorado.pl": scrape_eldorado,
     "pracuj.pl": scrape_pracuj,

@@ -8,6 +8,7 @@ Wojciech's personal Mistral API key so Gmail uses his connected account.
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime
 
 import pydantic
@@ -21,8 +22,8 @@ from mistralai.workflows.plugins.mistralai.connectors import (
 )
 
 from email_builder import build_email
-from matcher import llm_rescore, match_offers
-from scrapers import scrape_all
+from matcher import gate_offers, llm_rescore, match_offers
+from scrapers import enrich_offers, scrape_all
 
 log = logging.getLogger("job-alerts.workflow")
 
@@ -38,8 +39,28 @@ class JobAlertsInput(pydantic.BaseModel):
 @workflows.activity(name="collect-and-match")
 async def collect_and_match(llm_match: bool) -> dict:
     offers, status = scrape_all()
-    matches = match_offers(offers)
-    log.info("total offers: %d, stage-1 matches: %d", len(offers), len(matches))
+    # Stage 1 rework: gate on role/location first (cheap, no scoring), then
+    # enrich gated candidates with their full posting text, then score —
+    # so thin-data offers are judged on real content, not on tags alone.
+    gated = gate_offers(offers)
+    log.info("total offers: %d, gated: %d", len(offers), len(gated))
+    # enrichment policy: a gated offer gets its description fetched when
+    # EITHER it pre-scores >= ENRICH_MIN (default 15) on cheap data, OR its
+    # title alone carries strong role identity (the +30 identity pattern) —
+    # a perfect title with thin tags still deserves the real posting text.
+    # Offers already carrying a description (pracuj) cost nothing.
+    from matcher import ROLE_IDENTITY, score_offer
+    from scrapers import enrich_offers as _enrich
+    enrich_min = int(os.getenv("ENRICH_MIN", "15"))
+    enrich_max = int(os.getenv("ENRICH_MAX", "60"))
+    candidates = sorted(gated, key=score_offer, reverse=True)
+    to_enrich = [
+        o for o in candidates
+        if score_offer(o) >= enrich_min or ROLE_IDENTITY.search(o.title or "")
+    ][:enrich_max]
+    _enrich(to_enrich)
+    matches = match_offers(gated)
+    log.info("stage-1 matches: %d", len(matches))
     # funnel diagnostics: where do offers die, per source board?
     from matcher import ROLE_GATE, location_ok
     per_src = {}
