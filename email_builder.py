@@ -6,19 +6,28 @@ import html as html_mod
 import re
 
 
+def _g(o, key, default=""):
+    """Get a field from a dict or an object offer."""
+    if isinstance(o, dict):
+        return o.get(key, default)
+    return getattr(o, key, default)
+
+
 def _offer_row(m: dict, idx: int) -> str:
     o = m["offer"]
-    loc = html_mod.escape(o.location or "—")
-    title = html_mod.escape(o.title)
-    company = html_mod.escape(o.company or "")
-    skills = ", ".join((o.skills or [])[:8])
+    location = _g(o, "location")
+    work_mode = _g(o, "work_mode")
+    loc = html_mod.escape(location or "—")
+    title = html_mod.escape(_g(o, "title"))
+    company = html_mod.escape(_g(o, "company") or "")
+    skills = ", ".join((_g(o, "skills") or [])[:8])
     skills_h = html_mod.escape(skills) if skills else "—"
-    url = html_mod.escape(o.url)
+    url = html_mod.escape(_g(o, "url"))
     loc_txt = loc
-    if re.search(r"zdaln|remote", f"{o.location} {o.work_mode}", re.I):
+    if re.search(r"zdaln|remote", f"{location} {work_mode}", re.I):
         loc_txt = "Zdalnie/Remote"
     elif re.search(r"warszawa|warsaw", loc, re.I):
-        loc_txt = f"Warszawa · {html_mod.escape(o.work_mode or '')}"
+        loc_txt = f"Warszawa · {html_mod.escape(work_mode or '')}"
     return f"""<tr>
 <td style="padding:6px 8px;font-weight:600">{idx}</td>
 <td style="padding:6px 8px">
@@ -58,6 +67,8 @@ def build_email(matches: list[dict], board_status: dict[str, str], date_str: str
     plain = []
     for i, m in enumerate(top, 1):
         o = m["offer"]
-        plain.append(f"{i}. [{m['match']}%] {o.title} — {o.company} ({o.location})\n   {o.url}")
+        plain.append(
+            f"{i}. [{m['match']}%] {_g(o, 'title')} — {_g(o, 'company')} ({_g(o, 'location')})\n   {_g(o, 'url')}"
+        )
     plain_text = f"Daily Job Alerts — {date_str}\n{n} matched offers (>=50%).\n\n" + "\n".join(plain)
     return subject, html_body
