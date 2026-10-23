@@ -39,7 +39,25 @@ async def collect_and_match() -> dict:
     offers, status = scrape_all()
     matches = match_offers(offers)
     log.info("total offers: %d, matches: %d", len(offers), len(matches))
-    return {"matches": matches, "status": status}
+    # Serialize to plain dicts: Temporal payload conversion turns dataclasses
+    # into dicts between activities anyway, so keep the shape explicit.
+    serializable = [
+        {
+            "match": m["match"],
+            "offer": {
+                "title": m["offer"].title,
+                "company": m["offer"].company,
+                "location": m["offer"].location,
+                "work_mode": m["offer"].work_mode,
+                "salary": m["offer"].salary,
+                "url": m["offer"].url,
+                "skills": m["offer"].skills,
+                "source": m["offer"].source,
+            },
+        }
+        for m in matches
+    ]
+    return {"matches": serializable, "status": status}
 
 
 @workflows.activity(name="send-digest")
