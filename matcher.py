@@ -63,7 +63,7 @@ SKILL_WEIGHTS: list[tuple[str, int]] = [
 
 # The +30 role-identity patterns (first SKILL_WEIGHTS row) — used by the
 # enrichment step to catch title-perfect offers with thin tag data.
-ROLE_IDENTITY = SKILL_WEIGHTS[0][0]
+ROLE_IDENTITY = re.compile(SKILL_WEIGHTS[0][0], re.I)
 
 # Companies Wojciech would want to hear from even below the normal bar:
 # these get into stage 2 at >=30 instead of >=50. The match % itself stays
