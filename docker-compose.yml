@@ -1,0 +1,13 @@
+services:
+  scraper-app:
+    build: .
+    container_name: scraper_app
+    restart: unless-stopped
+    environment:
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY}
+      JOB_ALERTS_RECIPIENT: ${JOB_ALERTS_RECIPIENT:-wcieslak99@proton.me}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

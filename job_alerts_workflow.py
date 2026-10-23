@@ -1,7 +1,8 @@
 """job-alerts workflow: scrape Polish job boards daily, match to profile, email via Gmail.
 
-Runs on-behalf-of the triggering user (OBO), so Gmail uses Wojciech's own
-connected account. Deploy with hardened=true for OBO.
+Regular (non-OBO) workflow: connector credentials resolve from the worker's
+identity, i.e. the Mistral API key the worker runs under. Run the worker with
+Wojciech's personal Mistral API key so Gmail uses his connected account.
 """
 
 from __future__ import annotations
@@ -68,7 +69,7 @@ async def send_digest(
     return {"subject": subject, "sent": True}
 
 
-@workflows.workflow.define(name="job-alerts", on_behalf_of=True)
+@workflows.workflow.define(name="job-alerts")
 @uses_connectors(gmail_connector)
 class JobAlertsWorkflow:
     @workflows.workflow.entrypoint

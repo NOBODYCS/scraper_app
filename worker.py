@@ -1,7 +1,8 @@
-"""job-alerts worker entrypoint.
+"""job-alerts worker entrypoint (self-hosted).
 
 Env:
-- MISTRAL_API_KEY — workflow platform key (injected by Mistral deployment)
+- MISTRAL_API_KEY — Wojciech's personal Mistral API key; connector
+  credentials (Gmail) resolve from this identity
 - JOB_ALERTS_RECIPIENT — optional override, default wcieslak99@proton.me
 """
 
@@ -17,6 +18,7 @@ log = logging.getLogger("job-alerts")
 
 if os.getenv("JOB_ALERTS_RECIPIENT"):
     log.info("recipient override: %s", os.getenv("JOB_ALERTS_RECIPIENT"))
+log.info("job-alerts worker starting; workflow registered as 'job-alerts'")
 
 if __name__ == "__main__":
     workflows.serve(

@@ -19,14 +19,16 @@ Mistral managed workflow.
    with the TOP 15 matches and the best-fitting approved CV variant attached
    (`data/cv/` — selection only, content is never modified).
 
-## Running
+## Running (self-hosted)
 
-Deployed as a Mistral managed deployment (hardened, OBO) from this repo.
-Daily schedule triggers the `job-alerts` workflow.
+The worker self-registers the `job-alerts` workflow with Mistral and a daily
+schedule triggers it. Gmail connector credentials resolve from the worker's
+identity — run it with Wojciech's personal Mistral API key.
 
-Local dry run:
+    cp .env.example .env   # set MISTRAL_API_KEY
+    docker compose up -d --build
 
-    python worker.py  # requires mistralai-workflows and MISTRAL_API_KEY
+Daily schedule (Mistral side) triggers the registered `job-alerts` workflow.
 
 Pipeline-only test:
 
