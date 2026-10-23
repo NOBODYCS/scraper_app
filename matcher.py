@@ -21,7 +21,7 @@ log = logging.getLogger("job-alerts.matcher")
 # (do not overvalue); hard gaps = kubernetes/CI-CD, query SQL, cloud IaaS, certs.
 SKILL_WEIGHTS: list[tuple[str, int]] = [
     # Role identity — specific forms strongest...
-    (r"\b(system(?:s)? administrator|administrator system[oó]w|sysadmin|it administrator|administrator it|system engineer|inżynier system[oó]w)\b", 30),
+    (r"\b(system(?:s)? administrator|administrator system[oó]w|sysadmin|it administrator|administrator it|system(?:s)? engineer|inżynier system[oó]w|it systems engineer|systems and infrastructure)\b", 30),
     # ...generic "Administrator <something>" weaker signal
     (r"\b(administrator|administratorka)\b", 12),
     # STRONGEST competencies (baseline: intermediate-strong / strong)
@@ -94,7 +94,24 @@ def location_ok(offer) -> bool:
     return False
 
 
+# Hard-gap patterns: these describe technologies the candidate does NOT
+# claimably know. They are penalized at full weight only when they appear in
+# requirement/description text; in a skill-tag list they are aspirational
+# tags, not hard requirements, so they are penalized at 1/3 weight and the
+# stage-2 LLM makes the real call.
+HARD_GAP_PATTERNS = re.compile(
+    r"\b(kubernetes|k8s|helm|ci/cd|cicd|jenkins|gitlab ci|argo|"
+    r"terraform|ansible|puppet|"
+    r"azure\s?(?:vm|vnet|iaas)|aws|gcp|google cloud|cloud engineer|cloud architect|"
+    r"oracle|dba|database administrator|postgresql|mysql|t[- ]sql|mssql|"
+    r"rhel|red hat|rhcsa|rhce|"
+    r"cissp|cism|ccsp|mcse|certif)",
+    re.I,
+)
+
+
 def score_offer(offer) -> int:
+    desc = (offer.description or "").lower()
     text = " ".join([
         offer.title, offer.company, offer.description,
         " ".join(offer.skills or []), offer.work_mode,
@@ -102,6 +119,12 @@ def score_offer(offer) -> int:
     score = 0
     for pattern, weight in SKILL_WEIGHTS:
         if re.search(pattern, text, re.I):
+            # negative gap weights: full penalty only when the gap is stated
+            # in the description (a requirement), not merely tagged
+            if weight < 0 and HARD_GAP_PATTERNS.search(pattern):
+                if not re.search(pattern, desc, re.I):
+                    score += weight // 3
+                    continue
             score += weight
     return max(0, min(100, score))
 
@@ -127,10 +150,12 @@ def match_offers(offers: list) -> list[dict]:
         # the same fit because there is less text to match keywords in —
         # relax the cutoff there and let stage 2 (LLM) do the precision work.
         threshold = 50 if has_desc else 40
-        # dream companies: entry bar relaxed to 30 — the % stays honest,
-        # stage 2 still judges the real fit
+        # dream companies: entry bar relaxed to 20 — the % stays honest,
+        # stage 2 still judges the real fit. A dream offer with real title
+        # identity (+30) and only tag-level gaps lands ~20-30 and deserves
+        # the LLM's attention.
         if s < threshold and is_dream_company(o.company):
-            threshold = 30
+            threshold = 20
         if s < threshold:
             continue
         results.append({"offer": o, "match": s})

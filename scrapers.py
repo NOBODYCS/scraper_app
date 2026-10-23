@@ -300,6 +300,9 @@ _ELDO_QUERIES = [
     "inżynier systemów",
     "windows administrator",
     "helpdesk",
+    # dream companies: direct queries so their offers always enter the pool
+    # regardless of title vocabulary
+    "cd projekt",
 ]
 
 _ELDO_MODE_LABEL = {"remote": "Zdalnie", "hybrid": "Hybrydowo", "office": "Stacjonarnie"}
