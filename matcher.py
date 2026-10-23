@@ -58,6 +58,22 @@ SKILL_WEIGHTS: list[tuple[str, int]] = [
     (r"\b(cissp|cism|ccsp|mcse|certif)\b", -6),
 ]
 
+# Companies Wojciech would want to hear from even below the normal bar:
+# these get into stage 2 at >=30 instead of >=50. The match % itself stays
+# honest — only the entry threshold is relaxed, the LLM still judges fit.
+DREAM_COMPANIES = re.compile(
+    r"cd\s?projekt|cdpr|techland|allegro|nvidia|valve|riot|epic games|"
+    r"blizzard|ubisoft|paradox|11\s?bit|people can fly|ci games|"
+    r"bloober|flying wild hog|square enix|netflix|spotify|google|microsoft|"
+    r"aws|cloudflare|digital ocean|gitlab",
+    re.I,
+)
+
+
+def is_dream_company(company: str) -> bool:
+    return bool(DREAM_COMPANIES.search(company or ""))
+
+
 ROLE_GATE = re.compile(
     r"(admin|system|infrastruktur|it |it\b|network|sieci|helpdesk|help desk| "
     r"wsparcie|support|technolog|technic|devops|monitoring|cloud|chmura|windows|linux|m365|microsoft)",
@@ -111,6 +127,10 @@ def match_offers(offers: list) -> list[dict]:
         # the same fit because there is less text to match keywords in —
         # relax the cutoff there and let stage 2 (LLM) do the precision work.
         threshold = 50 if has_desc else 40
+        # dream companies: entry bar relaxed to 30 — the % stays honest,
+        # stage 2 still judges the real fit
+        if s < threshold and is_dream_company(o.company):
+            threshold = 30
         if s < threshold:
             continue
         results.append({"offer": o, "match": s})

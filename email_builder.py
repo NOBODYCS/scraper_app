@@ -74,6 +74,15 @@ def _title_html(url: str, title: str) -> str:
     return f'<div style="margin-top:2px;color:{INK};font-weight:700;font-size:15px">{title}</div>'
 
 
+def _source_line(source: str, idx: int, company: str = "") -> str:
+    from matcher import is_dream_company
+    star = " · ⭐ FIRMA MARZEŃ" if is_dream_company(company) else ""
+    return (
+        f'<div style="font-size:11px;color:{FAINT};font-weight:700;letter-spacing:1px">'
+        f"#{idx:02d} · {html_mod.escape(source.upper())}{star}</div>"
+    )
+
+
 def _offer_card(m: dict, idx: int) -> str:
     o = m["offer"]
     title = html_mod.escape(_g(o, "title"))
@@ -103,7 +112,7 @@ def _offer_card(m: dict, idx: int) -> str:
   <td style="padding:14px 16px 4px 16px">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
       <td style="vertical-align:top">
-        <div style="font-size:11px;color:{FAINT};font-weight:700;letter-spacing:1px">#{idx:02d} · {source.upper()}</div>
+        {_source_line(source, idx, company)}
         {_title_html(url, title)}
         <div style="color:{MUTED};font-size:12.5px;margin-top:2px">{company}</div>
       </td>
