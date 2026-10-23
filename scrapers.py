@@ -118,11 +118,24 @@ def scrape_pracuj() -> list[Offer]:
         "administrator systemowy",
         "administrator it",
         "administrator serwerów",
+        "administrator infrastruktury",
         "it support",
         "helpdesk",
         "inżynier systemów",
         "administrator sieci",
         "system administrator",
+        "informatyk",
+        # english mirrors — international companies post english titles
+        "infrastructure administrator",
+        "systems engineer",
+        "it administrator",
+        "devops engineer",
+        # dream companies: company-name searches so their offers always
+        # enter the pool regardless of title vocabulary
+        "cd projekt",
+        "techland",
+        "comarch",
+        "inpost",
     ]
     urls = [
         "https://www.pracuj.pl/praca/" + urllib.parse.quote(s, safe="") + "%3Bkw"
@@ -296,13 +309,26 @@ ELDORADO_MCP = "https://czyjesteldorado.pl/_mcp"
 _ELDO_QUERIES = [
     "administrator",
     "administrator systemów",
-    "it support",
+    "administrator infrastruktury",
+    "administrator serwerów",
     "inżynier systemów",
+    "informatyk",
+    "it support",
     "windows administrator",
     "helpdesk",
+    # active learning goal: keep DevOps-stretch offers visible
+    "devops",
+    # english mirrors — international companies post english titles
+    "system administrator",
+    "infrastructure administrator",
+    "systems engineer",
+    "it administrator",
+    "devops engineer",
+    "windows server administrator",
     # dream companies: direct queries so their offers always enter the pool
     # regardless of title vocabulary
     "cd projekt",
+    "techland",
 ]
 
 _ELDO_MODE_LABEL = {"remote": "Zdalnie", "hybrid": "Hybrydowo", "office": "Stacjonarnie"}

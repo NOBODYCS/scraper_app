@@ -16,8 +16,13 @@ services:
       JOB_ALERTS_RECIPIENT: ${JOB_ALERTS_RECIPIENT:-wcieslak99@proton.me}
       # Stable deployment identifier (defaults to scraper-app-local in the image)
       DEPLOYMENT_NAME: ${DEPLOYMENT_NAME:-scraper-app-local}
+    volumes:
+      - scraper_app_state:/app/state
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  scraper_app_state:

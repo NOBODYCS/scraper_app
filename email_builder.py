@@ -42,7 +42,7 @@ def _loc_short(location: str, work_mode: str) -> str:
     return (location or "—")[:18]
 
 
-def _row(m: dict, idx: int, dream: bool = False) -> str:
+def _row(m: dict, idx: int, dream: bool = False, is_new: bool = False) -> str:
     o = m["offer"]
     title = html_mod.escape(_g(o, "title"))
     company = html_mod.escape(_g(o, "company") or "")
@@ -57,8 +57,12 @@ def _row(m: dict, idx: int, dream: bool = False) -> str:
         f'<a href="{url}" style="color:{INK};font-weight:700;text-decoration:none">{title}</a>'
         if url else f'<span style="color:{INK};font-weight:700">{title}</span>'
     )
-    bg = f"background:#fdf6ec;" if dream else ""
-    bar = f"border-left:3px solid #d4a017;" if dream else "border-left:3px solid transparent;"
+    if dream:
+        bg, bar = "background:#fdf6ec;", "border-left:3px solid #d4a017;"
+    elif is_new:
+        bg, bar = "background:#eef7ef;", "border-left:3px solid #0e7a3d;"
+    else:
+        bg, bar = "", "border-left:3px solid transparent;"
     return f"""<tr style="border-bottom:1px solid {LINE};{bg}">
 <td style="padding:7px 10px;vertical-align:top;width:34px;color:{FAINT};font-size:12px;font-weight:700;{bar}">{idx}</td>
 <td style="padding:7px 4px;vertical-align:top">
@@ -76,10 +80,14 @@ def build_email(matches: list[dict], board_status: dict[str, str], date_str: str
     # dream companies pinned at the top (each group by match desc), then the rest
     dream = [m for m in top if is_dream_company(_g(m["offer"], "company"))]
     normal = [m for m in top if not is_dream_company(_g(m["offer"], "company"))]
+    new_normal = [m for m in normal if m.get("is_new")]
+    seen_normal = [m for m in normal if not m.get("is_new")]
     rows = "".join(
-        _row(m, i + 1, dream=True) for i, m in enumerate(dream)
+        _row(m, i + 1, dream=True, is_new=bool(m.get("is_new"))) for i, m in enumerate(dream)
     ) + "".join(
-        _row(m, i + 1 + len(dream), dream=False) for i, m in enumerate(normal)
+        _row(m, i + 1 + len(dream), dream=False, is_new=True) for i, m in enumerate(new_normal)
+    ) + "".join(
+        _row(m, i + 1 + len(dream) + len(new_normal), dream=False, is_new=False) for i, m in enumerate(seen_normal)
     )
     n = len(matches)
     remote_n = sum(
@@ -92,7 +100,8 @@ def build_email(matches: list[dict], board_status: dict[str, str], date_str: str
         for b, s in board_status.items()
     )
 
-    subject = f"💼 {n} ofert IT — {date_str}" + (f" (best {matches[0]['match']}%)" if matches else "")
+    new_n = sum(1 for m in matches if m.get("is_new"))
+    subject = f"💼 {n} ofert IT — {date_str}" + (f" ({new_n} NEW)" if new_n else "") + (f" (best {matches[0]['match']}%)" if matches else "")
 
     empty = (
         f'<tr><td colspan="3" style="padding:24px;text-align:center;color:{MUTED}">'
@@ -104,7 +113,7 @@ def build_email(matches: list[dict], board_status: dict[str, str], date_str: str
 <tr><td style="padding:16px 20px 10px 20px">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
     <td style="font-size:18px;font-weight:800;color:{INK}">Job Alerts <span style="color:{FAINT};font-size:13px;font-weight:400">{date_str}</span></td>
-    <td align="right" style="font-size:12px;color:{MUTED};white-space:nowrap">{strong_n}× ≥80% · {remote_n} zdalnych</td>
+    <td align="right" style="font-size:12px;color:{MUTED};white-space:nowrap">{strong_n}× ≥80% · {remote_n} zdalnych{f' · <b style="color:{GREEN}">{new_n} nowych</b>' if new_n else ''}</td>
   </tr></table>
 </td></tr>
 <tr><td style="padding:0 12px 12px 12px">

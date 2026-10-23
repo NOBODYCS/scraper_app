@@ -84,6 +84,7 @@ async def collect_and_match(llm_match: bool) -> dict:
             "match": m["match"],
             "llm_score": m.get("llm_score"),
             "llm_reason": m.get("llm_reason", ""),
+            "key": m["offer"].dedup_key,
             "offer": {
                 "title": m["offer"].title,
                 "company": m["offer"].company,
@@ -100,6 +101,29 @@ async def collect_and_match(llm_match: bool) -> dict:
     return {"matches": serializable, "status": status}
 
 
+STATE_FILE = os.getenv("STATE_FILE", "/app/state/last_sent.json")
+
+
+def _load_prev_keys() -> set:
+    import json as _json
+    from pathlib import Path as _P
+    try:
+        return set(_json.loads(_P(STATE_FILE).read_text(encoding="utf-8")))
+    except Exception:
+        return set()
+
+
+def _save_keys(keys: set) -> None:
+    import json as _json
+    from pathlib import Path as _P
+    try:
+        p = _P(STATE_FILE)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(_json.dumps(sorted(keys)), encoding="utf-8")
+    except Exception as e:
+        log.warning("could not persist sent-offer keys: %s", e)
+
+
 @workflows.activity(name="send-digest")
 async def send_digest(
     matches: list,
@@ -109,6 +133,11 @@ async def send_digest(
     gmail: ToolCallClient = Depends(gmail_connector),
 ) -> dict:
     date_str = datetime.now().strftime("%Y-%m-%d")
+    prev = _load_prev_keys()
+    for m in matches:
+        m["is_new"] = bool(m.get("key")) and m["key"] not in prev
+    new_count = sum(1 for m in matches if m.get("is_new"))
+    log.info("new offers vs last digest: %d of %d", new_count, len(matches))
     subject, html_body, plain_body = build_email(matches, status, date_str)
     if dry_run:
         log.info("dry-run: would send %r to %s", subject, recipient)
@@ -123,6 +152,7 @@ async def send_digest(
         },
     )
     log.info("email sent: %s", result)
+    _save_keys({m["key"] for m in matches if m.get("key")})
     return {"subject": subject, "sent": True}
 
 

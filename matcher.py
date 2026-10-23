@@ -21,9 +21,9 @@ log = logging.getLogger("job-alerts.matcher")
 # (do not overvalue); hard gaps = kubernetes/CI-CD, query SQL, cloud IaaS, certs.
 SKILL_WEIGHTS: list[tuple[str, int]] = [
     # Role identity — specific forms strongest...
-    (r"\b(system(?:s)? administrator|administrator system[oó]w|sysadmin|it administrator|administrator it|system(?:s)? engineer|inżynier system(?:[oó]w|owy|owe)|it systems engineer|systems and infrastructure)\b", 30),
+    (r"\b(system(?:s)? administrat\w{0,7}|administrat\w{0,7} system[oó]w|sysadmin|it administrat\w{0,7}|administrat\w{0,7} it|system(?:s)? engineer\w{0,2}|inżynier\w{0,4}\s?system\w{0,4}|it systems engineer|systems and infrastructure)\b", 30),
     # ...generic "Administrator <something>" weaker signal
-    (r"\b(administrator|administratorka)\b", 12),
+    (r"\badministrat\w{0,7}\b", 12),
     # STRONGEST competencies (baseline: intermediate-strong / strong)
     (r"\b(active directory|entra\s?i?d?|azure ad connect|intune|microsoft 365|m365|exchange online|office 365|sharepoint|teams|cross-forest|hybrid identity)\b", 16),
     (r"\b(zabbix|grafana|easyvista|itsm)\b", 14),
@@ -35,17 +35,17 @@ SKILL_WEIGHTS: list[tuple[str, int]] = [
     (r"\b(veeam|backup|nas|synology|qnap)\b", 8),
     (r"\b(gpo|group policy|wsus|wds|dns|dhcp|endpoint management|defender|laps)\b", 8),
     # FOUNDATIONAL-TO-INTERMEDIATE — explicitly reduced per baseline
-    (r"\b(vmware|proxmox|hyper-?v|virtualization|wirtualizacja|vsphere)\b", 6),
+    (r"\b(vmware|proxmox|hyper-?v|virtualiz\w{0,3}|wirtualizacj\w{0,3}|vsphere)\b", 6),
     (r"\b(fortinet|fortigate|ubiquiti|mikrotik|ruckus|vlan|firewall|wlan|802\.1x|nac\b|sdwan|sd-wan)\b", 6),
     (r"\b(cisco|ccna|ccnp)\b", 4),
     # Contextual positives
-    (r"\b(automation|automatyzacja|scripting|skrypty)\b", 5),
-    (r"\b(hybrid|hibryd|on[- ]?prem|infrastructure|infrastruktura|patching|patch management)\b", 6),
+    (r"\b(automation|automatyzacj\w{0,3}|scripting|skrypt\w{0,3})\b", 5),
+    (r"\b(hybrid|hibryd\w{0,3}|on[- ]?prem|infrastructur\w{0,3}|infrastruktur\w{0,3}|patching|patch management)\b", 6),
     (r"\b(mid|regular)\b", 8),
     # Level direction
-    (r"\b(junior|młodszy|młodsza|mlodszy|stażysta|intern)\b", -15),
-    (r"\b(helpdesk|help desk|service desk|wsparcie techniczne|1st line|first line|linia wsparcia)\b", -15),
-    (r"\b(senior|lead|architect|gł[oó]wny|starsz)\b", -10),
+    (r"\b(junior|młodsz\w{0,3}|mlodsz\w{0,3}|stażyst\w{0,3}|intern)\b", -15),
+    (r"\b(helpdesk|help desk|service desk|wsparci\w{0,3} techniczn\w{0,3}|1st line|first line|lini\w{0,3} wsparci\w{0,3})\b", -15),
+    (r"\b(senior|lead|architect|gł[oó]wn\w{0,3}|starsz\w{0,3})\b", -10),
     # NOT a developer / wrong discipline
     (r"\b(developer|programista|software engineer|backend|frontend|fullstack|full[- ]stack)\b", -35),
     (r"\b(java(?!script)|sap abap|flutter|swift|kotlin)\b", -35),
@@ -56,7 +56,7 @@ SKILL_WEIGHTS: list[tuple[str, int]] = [
     # Database penalty covers query-level/DBA work; mssql is deliberately
     # excluded — server-level MSSQL upkeep is the candidate's documented
     # level, and regex cannot tell upkeep from DBA work (LLM judges).
-    (r"\b(oracle|dba|database administrator|administrator baz danych|postgresql|mysql|t[- ]sql)\b", -15),
+    (r"\b(oracle|dba|database administrat\w{0,3}|administrat\w{0,3} baz danych|postgresql|mysql|t[- ]sql)\b", -15),
     (r"\b(rhel|red hat|rhcsa|rhce)\b", -10),
     (r"\b(cissp|cism|ccsp|mcse|certif)\b", -10),
 ]
@@ -72,7 +72,8 @@ DREAM_COMPANIES = re.compile(
     r"cd\s?projekt|cdpr|techland|allegro|nvidia|valve|riot|epic games|"
     r"blizzard|ubisoft|paradox|11\s?bit|people can fly|ci games|"
     r"bloober|flying wild hog|square enix|netflix|spotify|google|microsoft|"
-    r"aws|cloudflare|digital ocean|gitlab",
+    r"sony interactive|playstation|unity|fool'?s theory|supermassive|"
+    r"inpost|booksy|docplanner|orlen|pko\s?bp|pzu|asseco|comarch",
     re.I,
 )
 
@@ -266,7 +267,7 @@ async def llm_rescore(matches: list[dict], api_key: str | None = None) -> list[d
                 "work_mode": (m["offer"].work_mode or "")[:40],
                 "salary": (m["offer"].salary or "")[:40],
                 "skills": (m["offer"].skills or [])[:10],
-                "description": (m["offer"].description or "")[:800],
+                "description": (m["offer"].description or "")[:1500],
             }
             for i, m in enumerate(batch)
         ]
